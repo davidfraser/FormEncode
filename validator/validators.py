@@ -856,7 +856,7 @@ class URL(FancyValidator):
     check_exists = False
     add_http = True
 
-    url_re = re.compile(r'^(http|https)://[a-zA-Z\-\.]+\.[a-zA-Z]+(?::[0-9]+)(?:/.*|$)')
+    url_re = re.compile(r'^(http|https)://[a-z\-\.]+\.[a-z]+(?:[0-9]+)?(?:/.*)?$', re.I)
     scheme_re = re.compile(r'^[a-zA-Z]+:')
 
     messages = {
@@ -1074,6 +1074,7 @@ class DateConverter(FancyValidator):
             return self.convert_month(value)
 
     def convert_day(self, value, state):
+        self.assert_string(value, state)
         match = self._day_date_re.search(value)
         if not match:
             raise Invalid(self.message('badFormat', state),
