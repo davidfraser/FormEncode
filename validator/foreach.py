@@ -36,7 +36,7 @@ class ForEach(CompoundValidator):
         'empty': 'Please enter a value',
         }
     
-    def attemptConvert(self, value, state, validate):
+    def attempt_convert(self, value, state, validate):
         if self.convert_to_list:
             value = self._convert_to_list(value)
         if self.if_empty is not NoDefault and not value:

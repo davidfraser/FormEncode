@@ -225,7 +225,7 @@ class FancyValidator(Validator):
         'noneType': "The input must be a string (not None)",
         }
 
-    def attemptConvert(self, value, state, pre, convert, post):
+    def attempt_convert(self, value, state, pre, convert, post):
         """
         Handles both .to_python() and .from_python().
         """
@@ -251,16 +251,16 @@ class FancyValidator(Validator):
                 return self.if_invalid
 
     def to_python(self, value, state=None):
-        return self.attemptConvert(value, state,
-                                   self.validate_other,
-                                   self._to_python,
-                                   self.validate_python)
-
+        return self.attempt_convert(value, state,
+                                    self.validate_other,
+                                    self._to_python,
+                                    self.validate_python)
+    
     def from_python(self, value, state):
-        return self.attemptConvert(value, state,
-                                   self.validate_python,
-                                   self._from_python,
-                                   self.validate_other)
+        return self.attempt_convert(value, state,
+                                    self.validate_python,
+                                    self._from_python,
+                                    self.validate_other)
 
     def assert_string(self, value, state):
         if not isinstance(value, (str, unicode)):

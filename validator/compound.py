@@ -60,16 +60,16 @@ class CompoundValidator(Validator):
             return self
         return self(validators=new)
 
-    def attemptConvert(self, value, state, convertFunc):
-        raise NotImplementedError, "Subclasses must implement attemptConvert"
+    def attempt_convert(self, value, state, convertFunc):
+        raise NotImplementedError, "Subclasses must implement attempt_convert"
 
     def to_python(self, value, state=None):
-        return self.attemptConvert(value, state,
-                                   to_python)
-
+        return self.attempt_convert(value, state,
+                                    to_python)
+    
     def from_python(self, value, state):
-        return self.attemptConvert(value, state,
-                                   from_python)
+        return self.attempt_convert(value, state,
+                                    from_python)
 
 class Any(CompoundValidator):
     
@@ -79,7 +79,7 @@ class Any(CompoundValidator):
     can pass in lists of validators, which will be ANDed)
     """
 
-    def attemptConvert(self, value, state, convertFunc):
+    def attempt_convert(self, value, state, convertFunc):
         lastException = None
         for validator in self.validators:
             try:
@@ -102,7 +102,7 @@ class All(CompoundValidator):
     def __repr__(self):
         return '<All %s>' % self.validators
 
-    def attemptConvert(self, value, state, validate):
+    def attempt_convert(self, value, state, validate):
         try:
             for validator in self.validators:
                 value = validate(validator, value, state)
