@@ -1018,6 +1018,8 @@ class DateConverter(FancyValidator):
     ## @@: accepts only US-style dates
 
     accept_day = True
+    # also allowed: 'dd/mm/yyyy'
+    month_style = 'mm/dd/yyyy'
 
     _day_date_re = re.compile(r'^\s*(\d\d?)[\-\./\\](\d\d?|jan|january|feb|febuary|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[\-\./\\](\d\d\d?\d?)\s*$', re.I)
     _month_date_re = re.compile(r'^\s*(\d\d?|jan|january|feb|febuary|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[\-\./\\](\d\d\d?\d?)\s*$', re.I)
@@ -1077,7 +1079,13 @@ class DateConverter(FancyValidator):
             raise Invalid(self.message('badFormat', state),
                           value, state)
         day = int(match.group(1))
-        month = self.make_month(match.group(2), state)
+        try:
+            month = int(match.group(2))
+        except TypeError:
+            month = self.make_month(match.group(2), state)
+        else:
+            if self.month_style == 'mm/dd/yyyy':
+                month, day = day, month
         year = self.make_year(match.group(3), state)
         if month > 12 or month < 1:
             raise Invalid(self.message('monthRange', state),
@@ -1418,7 +1426,6 @@ class FieldsMatch(FormValidator):
         self.validate_python(field_dict, state)
 
     def validate_python(self, field_dict, state):
-        print "Checking:", self.field_names, field_dict
         ref = field_dict[self.field_names[0]]
         errors = {}
         for name in self.field_names[1:]:
