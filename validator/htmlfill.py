@@ -2,7 +2,7 @@ import HTMLParser
 import cgi
 
 def default_formatter(error):
-    return '<span class="error-message">%s</span><br>\n' % error
+    return '<span class="error-message">%s</span><br>\n' % cgi.escape(error)
 
 class FillingParser(HTMLParser.HTMLParser):
     r"""
