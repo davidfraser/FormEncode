@@ -27,6 +27,8 @@ import re
 import cgi
 DateTime = None
 mxlookup = None
+httplib = None
+urlparse = None
 from interfaces import *
 from api import *
 import protocols
@@ -825,6 +827,84 @@ class Email(FancyValidator):
     def _to_python(self, value, state):
         return value.strip()
 
+class URL(FancyValidator):
+
+    """
+    Validate a URL, either http://... or https://.  If check_exists
+    is true, then we'll actually make a request for the page.
+
+    If add_http is true, then if no scheme is present we'll add
+    http://
+    """
+
+    check_exists = False
+    add_http = True
+
+    url_re = re.compile(r'^(http|https)://[a-zA-Z\-\.]+\.[a-zA-Z]+(?::[0-9]+)(?:/.*|$)')
+    scheme_re = re.compile(r'^[a-zA-Z]+:')
+
+    messages = {
+        'noScheme': 'You must start your URL with http://, https://, etc',
+        'badURL': 'That is not a valid URL',
+        'httpError': 'An error occurred when trying to access the URL: %(error)s',
+        'notFound': 'The server responded that the page could not be found',
+        'status': 'The server responded with a bad status code (%(status)s)',
+        }
+
+    def _to_python(self, value, state):
+        global httplib
+        value = value.strip()
+        if self.add_http:
+            if not scheme_re.search(value):
+                value = 'http://' + value
+        match = scheme_re.search(value)
+        if not match:
+            raise Invalid(
+                self.message('noScheme', state),
+                value, state)
+        value = match.group(0).lower() + value[len(match.group(0)):]
+        if not self.url_re.search(value):
+            raise Invalid(
+                self.message('badURL', state),
+                value, state)
+        if check_exists and (value.startswith('http://')
+                             or value.startswith('https://')):
+            self._check_url_exists(value)
+
+    def _check_url_exists(self, url):
+        if httplib is None:
+            import httplib
+        if urlparse is None:
+            import urlparse
+        scheme, netloc, path, params, query, fragment = urlparse.urlparse(url, 'http')
+        if scheme == 'http':
+            ConnClass = httplib.HTTPConnection
+        else:
+            ConnClass = httplib.HTTPSConnection
+        try:
+            conn = ConnClass(netloc, port)
+            if params:
+                path += ';' + params
+            if query:
+                path += '?' + query
+            conn.request('HEAD', path)
+            res = conn.getresponse()
+        except httplib.HTTPException, e:
+            raise Invalid(
+                self.message('httpError', state, error=e),
+                state, value)
+        else:
+            if res.status == 404:
+                raise Invalid(
+                    self.message('notFound', state),
+                    state, value)
+            if res.status != 200:
+                raise Invalid(
+                    self.message('status', state, status=status),
+                    state, value)
+        
+        
+
 class StateProvince(FancyValidator):
     
     """
@@ -1047,6 +1127,183 @@ class DateConverter(FancyValidator):
     def unconvert_month(self, value, state):
         # @@ ib: double-check, improve
         return value.strftime("%m/%Y")
+
+class TimeConverter(FancyValidator):
+
+    """
+    Converts times in the format HH:MM:SSampm to (h, m, s).
+    Seconds are optional.
+
+    For ampm, set use_ampm = True.  For seconds, use_seconds = True.
+    Use 'optional' for either of these to make them optional.
+
+    Examples::
+
+        >>> tim = TimeConverter()
+        >>> to_python(tim, '8:30')
+        (8, 30)
+        >>> to_python(tim, '20:30')
+        (20, 30)
+        >>> to_python(tim, '30:00')
+        Traceback:
+            ...
+        Invalid: You must enter an hour in the range 0-23
+        >>> to_python(tim, '13:00pm')
+        Traceback:
+            ...
+        Invalid: You must enter an hour in the range 1-12
+        >>> to_python(tim, '12:-1')
+        Traceback:
+            ...
+        Invalid: You must enter a minute in the range 0-59
+        >>> to_python(tim, '12:02pm')
+        (12, 2)
+        >>> to_python(tim, '12:02am')
+        (0, 2)
+        >>> to_python(tim, '1:00PM')
+        (13, 0)
+        >>> from_python(tim, (13, 0))
+        '13:00:00'
+        >>> tim2 = tim(use_ampm=True, use_seconds=False)
+        >>> from_python(tim2, (13, 0))
+        '1:00pm'
+        >>> from_python(tim2, (0, 0))
+        '12:00am'
+        >>> from_python(tim2, (12, 0))
+        '12:00pm'
+    """
+
+    use_ampm = 'optional'
+    prefer_ampm = False
+    use_seconds = 'optional'
+
+    messages = {
+        'noAMPM': 'You must indicate AM or PM',
+        'tooManyColon': 'There are two many :\'s',
+        'noSeconds': 'You may not enter seconds',
+        'secondsRequired': 'You must enter seconds',
+        'minutesRequired': 'You must enter minutes (after a :)',
+        'badNumber': 'The %(part)s value you gave is not a number: %(number)r',
+        'badHour': 'You must enter an hour in the range %(range)s',
+        'badMinute': 'You must enter a minute in the range 0-59',
+        'badSecond': 'You must enter a second in the range 0-59',
+        }
+
+    def _to_python(self, value, state):
+        time = value.strip()
+        explicit_ampm = False
+        if self.use_ampm:
+            last_two = time[-2:].lower()
+            if last_two not in ('am', 'pm'):
+                if self.use_ampm != 'optional':
+                    raise Invalid(
+                        self.message('noAMPM', state),
+                        value, state)
+                else:
+                    offset = 0
+            else:
+                explicit_ampm = True
+                if last_two == 'pm':
+                    offset = 12
+                else:
+                    offset = 0
+                time = time[:-2]
+        else:
+            offset = 0
+        parts = time.split(':')
+        if len(parts) > 3:
+            raise Invalid(
+                self.message('tooManyColon', state),
+                value, state)
+        if len(parts) == 3 and not self.use_seconds:
+            raise Invalid(
+                self.message('noSeconds', state),
+                value, state)
+        if (len(parts) == 2
+            and self.use_seconds
+            and self.use_seconds != 'optional'):
+            raise Invalid(
+                self.message('secondsRequired', state),
+                value, state)
+        if len(parts) == 1:
+            raise Invalid(
+                self.message('minutesRequired', state),
+                value, state)
+        try:
+            hour = int(parts[0])
+        except ValueError:
+            raise Invalid(
+                self.message('badNumber', state, number=parts[0], part='hour'),
+                value, state)
+        if explicit_ampm:
+            if hour > 12 or hour < 1:
+                raise Invalid(
+                    self.message('badHour', state, number=hour, range='1-12'),
+                    value, state)
+            if hour == 12 and offset == 12:
+                # 12pm == 12
+                pass
+            elif hour == 12 and offset == 0:
+                # 12am == 0
+                hour = 0
+            else:
+                hour += offset
+        else:
+            if hour > 23 or hour < 0:
+                raise Invalid(
+                    self.message('badHour', state, number=hour, range='0-23'),
+                    value, state)
+        try:
+            minute = int(parts[1])
+        except ValueError:
+            raise Invalid(
+                self.message('badNumber', state, number=parts[1], part='minute'),
+                value, state)
+        if minute > 59 or minute < 0:
+            raise Invalid(
+                self.message('badMinute', state, number=minute),
+                value, state)
+        if len(parts) == 3:
+            try:
+                second = int(parts[2])
+            except ValueError:
+                raise Invalid(
+                    self.message('badNumber', state, number=parts[2], part='second'))
+            if second > 59 or second < 0:
+                raise Invalid(
+                    self.message('badSecond', state, number=second),
+                    value, state)
+        else:
+            second = None
+        if second is None:
+            return (hour, minute)
+        else:
+            return (hour, minute, second)
+
+    def _from_python(self, value, state):
+        if isinstance(value, (str, unicode)):
+            return value
+        if len(value) == 3:
+            hour, minute, second = value
+        elif len(value) == 2:
+            hour, minute = value
+            second = 0
+        ampm = ''
+        if ((self.use_ampm == 'optional' and self.prefer_ampm)
+            or (self.use_ampm and self.use_ampm != 'optional')):
+            ampm = 'am'
+            if hour > 12:
+                hour -= 12
+                ampm = 'pm'
+            elif hour == 12:
+                ampm = 'pm'
+            elif hour == 0:
+                hour = 12
+        if self.use_seconds:
+            return '%i:%02i:%02i%s' % (hour, minute, second, ampm)
+        else:
+            return '%i:%02i%s' % (hour, minute, ampm)
+        
 
 class PostalCode(Regex):
 
