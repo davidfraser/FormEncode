@@ -1045,7 +1045,7 @@ class DateConverter(FancyValidator):
         9: 30, 10: 31, 11: 30, 12: 31}
 
     messages = {
-        'badFormat': 'Please enter the date in the form dd/mm/yyyy',
+        'badFormat': 'Please enter the date in the form %(format)s',
         'monthRange': 'Please enter a month from 1 to 12',
         'invalidDay': 'Please enter a valid day',
         'dayRange': 'That month only has %(days)i days',
@@ -1053,7 +1053,7 @@ class DateConverter(FancyValidator):
         'unknownMonthName': "Unknown month name: %(month)s",
         'invalidYear': 'Please enter a number for the year',
         'fourDigitYear': 'Please enter a four-digit year',
-        'wrongFormat': 'Please enter the date in the form mm/yyyy',
+        'wrongFormat': 'Please enter the date in the form %(format)s',
         }
 
     def __init__(self, *args, **kw):
@@ -1077,7 +1077,8 @@ class DateConverter(FancyValidator):
         self.assert_string(value, state)
         match = self._day_date_re.search(value)
         if not match:
-            raise Invalid(self.message('badFormat', state),
+            raise Invalid(self.message('badFormat', state,
+                                       format=self.month_style),
                           value, state)
         day = int(match.group(1))
         try:
@@ -1135,7 +1136,8 @@ class DateConverter(FancyValidator):
     def convert_month(self, value, state):
         match = self._month_date_re.search(value)
         if not match:
-            raise Invalid(self.message('wrongFormat', state),
+            raise Invalid(self.message('wrongFormat', state,
+                                       format='mm/yyyy'),
                           value, state)
         month = self.make_month(match.group(1))
         year = self.make_year(match.group(2), state)
@@ -1316,7 +1318,9 @@ class TimeConverter(FancyValidator):
     def _from_python(self, value, state):
         if isinstance(value, (str, unicode)):
             return value
-        if len(value) == 3:
+        if hasattr(value, 'hour'):
+            hour, minute = value.hour, value.minute
+        elif len(value) == 3:
             hour, minute, second = value
         elif len(value) == 2:
             hour, minute = value
