@@ -83,11 +83,15 @@ class _HTML:
         return ElementList(args)
 
     def quote(self, arg):
-        return escape(unicode(arg), 1)
+        if arg is None:
+            return ''
+        return escape(unicode(arg).encode(default_encoding), 1)
 
     def str(self, arg, encoding=None):
         if isinstance(arg, str):
             return arg
+        elif arg is None:
+            return ''
         elif isinstance(arg, unicode):
             return arg.encode(default_encoding)
         elif isinstance(arg, (list, tuple)):

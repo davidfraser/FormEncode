@@ -1,5 +1,8 @@
 from htmlgen import html
 
+# A test value that can't be encoded as ascii:
+uni_value = u'\xff'
+
 def test_basic():
     output = '<a href="test">hey there</a>'
     assert str(html.a(href='test')('hey there')) == output
@@ -20,7 +23,6 @@ def test_compound():
     assert str(html.b(inner)) == output
 
 def test_unicode():
-    uni_value = u'\xff'
     try:
         uni_value.encode('ascii')
     except ValueError:
@@ -31,8 +33,17 @@ def test_unicode():
             % (uni_value, uni_value.encode('ascii')))
     assert (str(html.b(uni_value))
             == ('<b>%s</b>' % uni_value).encode('utf-8'))
+
+def test_quote():
+    assert html.quote('<hey>!') == '&lt;hey&gt;!'
+    assert html.quote(uni_value) == uni_value.encode('utf-8')
+    assert html.quote(None) == ''
+    assert html.str(None) == ''
+    assert str(html.b('<hey>')) == '<b>&lt;hey&gt;</b>'
     
 if __name__ == '__main__':
-    test_basic()
-    test_compound()
-    test_unicode()
+    # It's like a super-mini py.test...
+    for name, value in globals().items():
+        if name.startswith('test'):
+            print name
+            value()
