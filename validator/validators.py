@@ -700,7 +700,7 @@ class Int(FancyValidator):
     def _to_python(self, value, state):
         try:
             return int(value)
-        except ValueError:
+        except (ValueError, TypeError):
             raise Invalid(self.message('integer', state),
                           value, state)
 
