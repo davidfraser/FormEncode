@@ -145,8 +145,8 @@ class FillingParser(HTMLParser.HTMLParser):
         if name is None:
             name = self.in_error
         assert name is not None, (
-            "Name attribute in <error> required if not contained in "
-            "<iferror> (%i:%i)" % self.getpos())
+            "Name attribute in <form:error> required if not contained in "
+            "<form:iferror> (%i:%i)" % self.getpos())
         error = self.errors.get(name, '')
         if error:
             error = self.error_formatters[formatter](error)
