@@ -158,23 +158,12 @@ class Element(et._ElementInterface):
         return str(self).decode(default_encoding)
 
     def __repr__(self):
-        return '<Element %r>' % str(self)
-
-class UnfinishedInput:
-
-    def __init__(self, tag, type=None):
-        self._type = type
-        UnfinishedTag.__init__(self, tag)
-
-    def __call__(self, *args, **kw):
-        if self._type:
-            kw['type'] = self._type
-        return UnfinishedTag.__call__(self, *args, **kw)
-
-    def __getattr__(self, attr):
-        if attr.startswith('__'):
-            raise AttributeError
-        return self.__class__(self._tag, type=attr.lower())
+        content = str(self)
+        if len(content) > 25:
+            content = repr(content[:25]) + '...'
+        else:
+            content = repr(content)
+        return '<Element %r>' % content
 
 class ElementList(list):
     
