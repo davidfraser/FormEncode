@@ -1,8 +1,24 @@
 import HTMLParser
 import cgi
 
+import validators, schema, compound
+
 def default_formatter(error):
-    return '<span class="error-message">%s</span><br>\n' % cgi.escape(error)
+    return '<span class="error-message">%s</span><br />\n' % cgi.escape(error)
+
+def none_formatter(error):
+    return error
+
+def escape_formatter(error):
+    return cgi.escape(error, 1)
+
+default_validators = dict([(name.lower(), getattr(validators, name)) for name in dir(validators)])
+
+def get_messages(cls, message):
+    if not message:
+        return {}
+    else:
+        return dict([(k, message) for k in cls._messages.keys()])
 
 class FillingParser(HTMLParser.HTMLParser):
     r"""
@@ -38,7 +54,7 @@ class FillingParser(HTMLParser.HTMLParser):
 
     def __init__(self, defaults, errors=None, use_all_keys=False,
                  error_formatters=None, error_class='error',
-                 add_attributes=None):
+                 add_attributes=None, validators=default_validators):
         HTMLParser.HTMLParser.__init__(self)
         self.content = []
         self.source = None
@@ -55,16 +71,21 @@ class FillingParser(HTMLParser.HTMLParser):
         self.used_keys = {}
         self.used_errors = {}
         if error_formatters is None:
-            self.error_formatters = {'default': default_formatter}
+            self.error_formatters = {'default': default_formatter,
+                                     'none': none_formatter,
+                                     'escape': escape_formatter}
         else:
             self.error_formatters = error_formatters
         self.error_class = error_class
         self.add_attributes = add_attributes or {}
+        self.validators = validators
+        self._schema = None
 
     def feed(self, data):
         self.source = data
         self.lines = data.split('\n')
         self.source_pos = 1, 0
+        self._schema = schema.Schema()
         HTMLParser.HTMLParser.feed(self, data)
 
     def close(self):
@@ -92,20 +113,26 @@ class FillingParser(HTMLParser.HTMLParser):
     def add_key(self, key):
         self.used_keys[key] = 1
 
-    def handle_starttag(self, tag, attrs):
+    def handle_starttag(self, tag, attrs, startend=False):
         self.write_pos()
         if tag == 'input':
-            self.handle_input(attrs)
+            self.handle_input(attrs, startend)
         elif tag == 'textarea':
             self.handle_textarea(attrs)
         elif tag == 'select':
             self.handle_select(attrs)
         elif tag == 'option':
             self.handle_option(attrs)
+            return
         elif tag == 'form:error':
             self.handle_error(attrs)
+            return
         elif tag == 'form:iferror':
             self.handle_iferror(attrs)
+            return
+        else:
+            return
+        self.update_schema(attrs)
 
     def handle_misc(self, whatever):
         self.write_pos()
@@ -126,6 +153,9 @@ class FillingParser(HTMLParser.HTMLParser):
         elif tag == 'form:iferror':
             self.handle_end_iferror()
 
+    def handle_startendtag(self, tag, attrs):
+        return self.handle_starttag(tag, attrs, True)
+
     def handle_iferror(self, attrs):
         name = self.get_attr(attrs, 'name')
         assert name, "Name attribute in <iferror> required (%s)" % self.getpos()
@@ -137,7 +167,7 @@ class FillingParser(HTMLParser.HTMLParser):
     def handle_end_iferror(self):
         self.in_error = None
         self.skip_error = False
-        self.skip_next = False
+        self.skip_next = True
 
     def handle_error(self, attrs):
         name = self.get_attr(attrs, 'name')
@@ -154,7 +184,7 @@ class FillingParser(HTMLParser.HTMLParser):
         self.skip_next = True
         self.used_errors[name] = 1
 
-    def handle_input(self, attrs):
+    def handle_input(self, attrs, startend):
         t = (self.get_attr(attrs, 'type') or 'text').lower()
         name = self.get_attr(attrs, 'name')
         value = self.defaults.get(name)
@@ -173,7 +203,7 @@ class FillingParser(HTMLParser.HTMLParser):
         if t in ('text', 'hidden', 'submit', 'reset', 'button'):
             self.set_attr(attrs, 'value', value or
                           self.get_attr(attrs, 'value', ''))
-            self.write_tag('input', attrs)
+            self.write_tag('input', attrs, startend)
             self.skip_next = True
             self.add_key(name)
         elif t == 'checkbox':
@@ -209,11 +239,11 @@ class FillingParser(HTMLParser.HTMLParser):
                    % (t, self.getpos())
 
     def handle_textarea(self, attrs):
+        name = self.get_attr(attrs, 'name')
         if (self.error_class
-            and self.errors.get(self.get_attr(attrs, 'name'))):
+            and self.errors.get(name)):
             self.add_class(attrs, self.error_class)
         self.write_tag('textarea', attrs)
-        name = self.get_attr(attrs, 'name')
         value = self.defaults.get(name, '')
         self.write_text(cgi.escape(value, 1))
         self.write_text('</textarea>')
@@ -225,11 +255,15 @@ class FillingParser(HTMLParser.HTMLParser):
         self.skip_next = True
 
     def handle_select(self, attrs):
+        name = self.get_attr(attrs, 'name')
         if (self.error_class
-            and self.errors.get(self.get_attr(attrs, 'name'))):
+            and self.errors.get(name)):
             self.add_class(attrs, self.error_class)
         self.in_select = self.get_attr(attrs, 'name')
+        self.write_tag('select', attrs)
+        self.skip_next = True
         self.add_key(self.in_select)
+        
 
     def handle_end_select(self):
         self.in_select = None
@@ -245,12 +279,49 @@ class FillingParser(HTMLParser.HTMLParser):
         self.write_tag('option', attrs)
         self.skip_next = True
 
+    def update_schema(self, attrs):
+        name = self.get_attr(attrs, "name")
+        if not name:
+            return
+        v = compound.All()
+        message = self.get_attr(attrs, "form:message")
+        required = self.get_attr(attrs, "form:required", "no").lower()
+        required = (required == "yes") or (required == "true")
+        if required:
+            v.validators.append(validators.NotEmpty(messages=get_messages(validators.NotEmpty, message)))
+        t = self.get_attr(attrs, "form:validate", None)
+        if t:
+            # validatorname[:argument]
+            i = t.find(":")
+            if i > -1:
+                args = t[i+1:] # TODO: split on commas?
+                t = t[:i].lower()
+            else:
+                args = None
+                t = t.lower()
+            # get the validator class by name
+            vclass = self.validators.get(t)
+            if not vclass:
+                raise ValueError, "Invalid validation type: " + t
+            if args:
+                vinst = vclass(args, messages=get_messages(vclass, message)) # TODO: if something takes more than 1 string argument, wrap in a function which parses args
+            else:
+                vinst = vclass(messages=get_messages(vclass, message))
+            v.validators.append(vinst)
+        self._schema.add_field(name, v)
+
+    def schema(self):
+        return self._schema
+
     def write_text(self, text):
         self.content.append(text)
 
-    def write_tag(self, tag, attrs):
+    def write_tag(self, tag, attrs, startend=False):
         attr_text = ''.join([' %s="%s"' % (n, cgi.escape(str(v), 1))
-                             for (n, v) in attrs])
+                             for (n, v) in attrs
+                             if not n.startswith('form:')])
+        if startend:
+            attr_text += " /"
         self.write_text('<%s%s>' % (tag, attr_text))
 
     def write_pos(self):
@@ -268,6 +339,7 @@ class FillingParser(HTMLParser.HTMLParser):
         else:
             self.write_text(
                 self.lines[self.source_pos[0]-1][self.source_pos[1]:])
+            self.write_text('\n')
             for i in range(self.source_pos[0]+1, cur_line):
                 self.write_text(self.lines[i-1])
                 self.write_text('\n')
