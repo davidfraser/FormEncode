@@ -166,8 +166,9 @@ class FillingParser(HTMLParser.HTMLParser):
         if (self.error_class
             and self.errors.get(self.get_attr(attrs, 'name'))):
             self.add_class(attrs, self.error_class)
-        if t == 'text' or t == 'hidden':
-            self.set_attr(attrs, 'value', value or '')
+        if t in ('text', 'hidden', 'submit', 'reset', 'button'):
+            self.set_attr(attrs, 'value', value or
+                          self.get_attr(attrs, 'value', ''))
             self.write_tag('input', attrs)
             self.skip_next = True
             self.add_key(name)
@@ -189,7 +190,7 @@ class FillingParser(HTMLParser.HTMLParser):
             self.write_tag('input', attrs)
             self.skip_next = True
             self.add_key(name)
-        elif t in ('file', 'button', 'submit', 'reset'):
+        elif t == 'file':
             pass # don't skip next
         else:
             assert 0, "I don't know about this kind of <input>: %s (pos: %s)" \
