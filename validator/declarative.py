@@ -49,14 +49,18 @@ class _methodwrapper(object):
         self.type = type
 
     def __call__(self, *args, **kw):
-        assert not kw.has_key('self') and not kw.has_key('cls'), "You cannot use 'self' or 'cls' arguments to a classinstancemethod"
+        assert not kw.has_key('self') and not kw.has_key('cls'), (
+            "You cannot use 'self' or 'cls' arguments to a "
+            "classinstancemethod")
         return self.func(*((self.obj, self.type) + args), **kw)
 
     def __repr__(self):
         if self.obj is None:
-            return '<bound class method %s.%s>' % (self.type.__name__, self.func.func_name)
+            return ('<bound class method %s.%s>'
+                    % (self.type.__name__, self.func.func_name))
         else:
-            return '<bound method %s.%s of %r>' % (self.type.__name__, self.func.func_name, self.obj)
+            return ('<bound method %s.%s of %r>'
+                    % (self.type.__name__, self.func.func_name, self.obj))
 
 
 class DeclarativeMeta(type):

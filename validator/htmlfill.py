@@ -53,7 +53,10 @@ class FillingParser(HTMLParser.HTMLParser):
         self.use_all_keys = use_all_keys
         self.used_keys = {}
         self.used_errors = {}
-        self.error_formatters = error_formatters or {'default': default_formatter}
+        if error_formatters is None:
+            self.error_formatters = {'default': default_formatter}
+        else:
+            self.error_formatters = error_formatters
 
     def feed(self, data):
         self.source = data
@@ -62,18 +65,22 @@ class FillingParser(HTMLParser.HTMLParser):
         HTMLParser.HTMLParser.feed(self, data)
 
     def close(self):
-        HTTPParser.HTTPParser.close(self)
+        HTMLParser.HTMLParser.close(self)
         if self.use_all_keys:
             unused = self.defaults.copy()
             unused_errors = self.errors.copy()
             for key in self.used_keys.keys():
-                if self.unused.has_key(key):
+                if unused.has_key(key):
                     del unused[key]
             for key in self.used_errors.keys():
-                if self.unused_errors.has_key(key):
+                if unused_errors.has_key(key):
                     del unused_errors[key]
-            assert not unused, "These keys from defaults were not used in the form: %s" % unused.keys()
-            assert not unused_errors, "These keys from errors were not used in the form: %s" % unused_errors.keys()
+            assert not unused, (
+                "These keys from defaults were not used in the form: %s"
+                % unused.keys())
+            assert not unused_errors, (
+                "These keys from errors were not used in the form: %s"
+                % unused_errors.keys())
 
     def add_key(self, key):
         self.used_keys[key] = 1
@@ -125,12 +132,14 @@ class FillingParser(HTMLParser.HTMLParser):
         self.skip_error = False
         self.skip_next = False
 
-    def handle_error(self, attr):
+    def handle_error(self, attrs):
         name = self.get_attr(attrs, 'name')
         formatter = self.get_attr(attrs, 'format') or 'default'
         if not name:
             name = self.in_error
-        assert name, "Name attribute in <error> required if not contained in <iferror> (%s)" % self.getpos()
+        assert name, (
+            "Name attribute in <error> required if not contained in "
+            "<iferror> (%s)" % self.getpos())
         error = self.errors.get(name, '')
         if error:
             error = self.error_formatters[formatter](error)
@@ -217,9 +226,11 @@ class FillingParser(HTMLParser.HTMLParser):
             self.source_pos = self.getpos()
             return
         if cur_line == self.source_pos[0]:
-            self.write_text(self.lines[cur_line-1][self.source_pos[1]:cur_offset])
+            self.write_text(
+                self.lines[cur_line-1][self.source_pos[1]:cur_offset])
         else:
-            self.write_text(self.lines[self.source_pos[0]-1][self.source_pos[1]:])
+            self.write_text(
+                self.lines[self.source_pos[0]-1][self.source_pos[1]:])
             for i in range(self.source_pos[0]+1, cur_line):
                 self.write_text(self.lines[i-1])
                 self.write_text('\n')

@@ -108,8 +108,9 @@ class ConfirmType(FancyValidator):
                 msg = self.message('subclass', state, object=value,
                                    subclass=self.subclass[0])
             else:
+                subclass_list = ', '.join(map(str, self.subclass))
                 msg = self.message('inSubclass', state, object=value,
-                                   subclassList=', '.join(map(str, self.subclass)))
+                                   subclassList=subclass_list)
             raise Invalid(msg, value, state)
 
     def confirm_type(self, value, state):
@@ -181,7 +182,8 @@ class Wrapper(FancyValidator):
         self.validate_other = self.wrap(self.func_validate_other)
 
     def wrap(self, func):
-        if not func: return None
+        if not func:
+            return None
         def result(value, state, func=func):
             try:
                 return func(value)
@@ -418,7 +420,9 @@ class Regex(FancyValidator):
         FancyValidator.__init__(self, *args, **kw)
         if isinstance(self.regex, str):
             ops = 0
-            assert not isinstance(self.regexOps, str), "regexOps should be a list of options from the re module (names, or actual values)"
+            assert not isinstance(self.regexOps, str), (
+                "regexOps should be a list of options from the re module "
+                "(names, or actual values)")
             for op in self.regexOps:
                 if isinstance(op, str):
                     ops |= getattr(re, op)
@@ -515,8 +519,9 @@ class OneOf(FancyValidator):
                     raise Invalid(self.message('invalid', state),
                                   value, state)
                 else:
+                    items = '; '.join(map(str, self.list))
                     raise Invalid(self.message('notIn', state,
-                                               items='; '.join(map(str, self.list))),
+                                               items=items),
                                   value, state)
 
 class DictConverter(FancyValidator):
@@ -571,8 +576,9 @@ class DictConverter(FancyValidator):
                 raise Invalid(self.message('keyNotFound', state),
                               value, state)
             else:
+                items = '; '.join(map(repr, self.dict.keys()))
                 raise Invalid(self.message('chooseKey', state,
-                                           items='; '.join(map(repr, self.dict.keys()))),
+                                           items=items),
                               value, state)
 
     def _from_python(self, value, state):
@@ -583,9 +589,10 @@ class DictConverter(FancyValidator):
             raise Invalid(self.message('valueNotFound', state),
                           value, state)
         else:
+            items = '; '.join(map(repr, self.dict.values()))
             raise Invalid(self.message('chooseValue', state,
                                        value=repr(value),
-                                       items='; '.join(map(repr, self.dict.values()))),
+                                       items=items),
                           value, state)
 
 class IndexListConverter(FancyValidator):
@@ -666,14 +673,18 @@ class DateValidator(FancyValidator):
 
     def validate_python(self, value, state):
         if self.earliestDate and value < self.earliestDate:
+            date_formatted = self.earliestDate.strftime(
+                self.message('dateFormat', state))
             raise Invalid(
                 self.message('after', state,
-                             date=self.earliestDate.strftime(self.message('dateFormat', state))),
+                             date=date_formatted),
                 value, state)
         if self.latestDate and value > self.latestDate:
+            date_formatted = self.latestDate.strftime(
+                self.message('dateFormat', state))
             raise Invalid(
                 self.message('before', state,
-                             date=self.latestDate.strftime(self.message('dateFormat', state))),
+                             date=date_formatted),
                 value, state)
 
 class Int(FancyValidator):
@@ -742,8 +753,10 @@ class String(FancyValidator):
                           value, state)
 
     def _from_python(self, value, state):
-        if value: return str(value)
-        if value == 0: return str(value)
+        if value:
+            return str(value)
+        if value == 0:
+            return str(value)
         return ""
 
 class Set(FancyValidator):
@@ -770,7 +783,7 @@ class Email(FancyValidator):
     installed <http://pydns.sf.net> to look up MX records.
     """
 
-    resolve_domain=False
+    resolve_domain = False
 
     usernameRE = re.compile(r"^[a-z0-9\_\-']+", re.I)
     domainRE = re.compile(r"^[a-z0-9\.\-]+\.[a-z]+$", re.I)
@@ -792,7 +805,10 @@ class Email(FancyValidator):
                     from DNS.lazy import mxlookup
                 except ImportError:
                     import warnings
-                    warnings.warn("pyDNS <http://pydns.sf.net> is not installed on your system (or the DNS package cannot be found).  I cannot resolve domain names in addresses")
+                    warnings.warn(
+                        "pyDNS <http://pydns.sf.net> is not installed on "
+                        "your system (or the DNS package cannot be found).  "
+                        "I cannot resolve domain names in addresses")
                     raise
 
     def validate_python(self, value, state):
@@ -852,12 +868,11 @@ class URL(FancyValidator):
         }
 
     def _to_python(self, value, state):
-        global httplib
         value = value.strip()
         if self.add_http:
-            if not scheme_re.search(value):
+            if not self.scheme_re.search(value):
                 value = 'http://' + value
-        match = scheme_re.search(value)
+        match = self.scheme_re.search(value)
         if not match:
             raise Invalid(
                 self.message('noScheme', state),
@@ -867,22 +882,24 @@ class URL(FancyValidator):
             raise Invalid(
                 self.message('badURL', state),
                 value, state)
-        if check_exists and (value.startswith('http://')
-                             or value.startswith('https://')):
-            self._check_url_exists(value)
+        if self.check_exists and (value.startswith('http://')
+                                  or value.startswith('https://')):
+            self._check_url_exists(value, state)
 
-    def _check_url_exists(self, url):
+    def _check_url_exists(self, url, state):
+        global httplib, urlparse
         if httplib is None:
             import httplib
         if urlparse is None:
             import urlparse
-        scheme, netloc, path, params, query, fragment = urlparse.urlparse(url, 'http')
+        scheme, netloc, path, params, query, fragment = urlparse.urlparse(
+            url, 'http')
         if scheme == 'http':
             ConnClass = httplib.HTTPConnection
         else:
             ConnClass = httplib.HTTPSConnection
         try:
-            conn = ConnClass(netloc, port)
+            conn = ConnClass(netloc)
             if params:
                 path += ';' + params
             if query:
@@ -892,16 +909,16 @@ class URL(FancyValidator):
         except httplib.HTTPException, e:
             raise Invalid(
                 self.message('httpError', state, error=e),
-                state, value)
+                state, url)
         else:
             if res.status == 404:
                 raise Invalid(
                     self.message('notFound', state),
-                    state, value)
+                    state, url)
             if res.status != 200:
                 raise Invalid(
-                    self.message('status', state, status=status),
-                    state, value)
+                    self.message('status', state, status=res.status),
+                    state, url)
         
         
 
@@ -1045,12 +1062,14 @@ class DateConverter(FancyValidator):
                 from mx import DateTime
             except ImportError:
                 import DateTime
-        assert DateTime, "You must have mxDateTime installed to use DateConverter"
-        FancyValidator.__init__(self)
+        assert DateTime, (
+            "You must have mxDateTime installed to use DateConverter")
 
     def _to_python(self, value, state):
-        if self.accept_day: return self.convert_day(value, state)
-        else: return self.convert_month(value)
+        if self.accept_day:
+            return self.convert_day(value, state)
+        else:
+            return self.convert_month(value)
 
     def convert_day(self, value, state):
         match = self._day_date_re.search(value)
@@ -1058,8 +1077,8 @@ class DateConverter(FancyValidator):
             raise Invalid(self.message('badFormat', state),
                           value, state)
         day = int(match.group(1))
-        month = self.make_month(match.group(2))
-        year = self.makeYear(match.group(3))
+        month = self.make_month(match.group(2), state)
+        year = self.make_year(match.group(3), state)
         if month > 12 or month < 1:
             raise Invalid(self.message('monthRange', state),
                           value, state)
@@ -1077,7 +1096,7 @@ class DateConverter(FancyValidator):
                                        exception=str(v)),
                           value, state)
         
-    def make_month(self, value):
+    def make_month(self, value, state):
         try:
             return int(value)
         except ValueError:
@@ -1089,19 +1108,19 @@ class DateConverter(FancyValidator):
                                            month=value),
                               value, state)
 
-    def makeYear(self, year):
+    def make_year(self, year, state):
         try:
             year = int(year)
         except ValueError:
             raise Invalid(self.message('invalidYear', state),
-                          value, state)
+                          year, state)
         if year <= 20:
             year = year + 2000
         if year >= 50 and year < 100:
             year = year + 1900
         if year > 20 and year < 50:
             raise Invalid(self.message('fourDigitYear', state),
-                          value, state)
+                          year, state)
         return year
 
     def convert_month(self, value, state):
@@ -1110,15 +1129,17 @@ class DateConverter(FancyValidator):
             raise Invalid(self.message('wrongFormat', state),
                           value, state)
         month = self.make_month(match.group(1))
-        year = self.makeYear(match.group(2))
+        year = self.make_year(match.group(2), state)
         if month > 12 or month < 1:
             raise Invalid(self.message('monthRange', state),
                           value, state)
         return DateTime.DateTime(year, month)
 
     def _from_python(self, value, state):
-        if self.accept_day: return self.unconvert_day(value, state)
-        else: return self.unconvert_month(value, state)
+        if self.accept_day:
+            return self.unconvert_day(value, state)
+        else:
+            return self.unconvert_month(value, state)
 
     def unconvert_day(self, value, state):
         # @@ ib: double-check, improve
@@ -1251,13 +1272,15 @@ class TimeConverter(FancyValidator):
         else:
             if hour > 23 or hour < 0:
                 raise Invalid(
-                    self.message('badHour', state, number=hour, range='0-23'),
+                    self.message('badHour', state,
+                                 number=hour, range='0-23'),
                     value, state)
         try:
             minute = int(parts[1])
         except ValueError:
             raise Invalid(
-                self.message('badNumber', state, number=parts[1], part='minute'),
+                self.message('badNumber', state,
+                             number=parts[1], part='minute'),
                 value, state)
         if minute > 59 or minute < 0:
             raise Invalid(
@@ -1268,7 +1291,8 @@ class TimeConverter(FancyValidator):
                 second = int(parts[2])
             except ValueError:
                 raise Invalid(
-                    self.message('badNumber', state, number=parts[2], part='second'))
+                    self.message('badNumber', state,
+                                 number=parts[2], part='second'))
             if second > 59 or second < 0:
                 raise Invalid(
                     self.message('badSecond', state, number=second),
@@ -1391,7 +1415,7 @@ class FieldsMatch(FormValidator):
         for name in self.field_names:
             if not dict.has_key(name):
                 return
-        self.validate(field_dict)
+        self.validate_python(field_dict, state)
 
     def validate_python(self, field_dict, state):
         print "Checking:", self.field_names, field_dict
@@ -1407,7 +1431,9 @@ class FieldsMatch(FormValidator):
         if errors:
             error_list = errors.items()
             error_list.sort()
-            raise Invalid('<br>\n'.join(['%s: %s' % (name, value) for name, value in error_list]),
+            error_message = '<br>\n'.join(
+                ['%s: %s' % (name, value) for name, value in error_list])
+            raise Invalid(error_message,
                           {}, field_dict, state,
                           error_dict=errors)
 
@@ -1437,8 +1463,8 @@ class CreditCardValidator(FormValidator):
         }
 
     def validate_partial(self, field_dict, state):
-        if not field_dict.get(self._cc_type_field, None) \
-           or not field_dict.get(self._cc_number_field, None):
+        if not field_dict.get(self.cc_type_field, None) \
+           or not field_dict.get(self.cc_number_field, None):
             return None
         self.validate(field_dict, state)
 
@@ -1454,16 +1480,17 @@ class CreditCardValidator(FormValidator):
                 field_dict, state, error_dict=errors)
         
     def _validateReturn(self, field_dict, state):
-        ccType = field_dict[self._cc_type_field].lower().strip()
-        number = field_dict[self._cc_number_field].strip()
+        ccType = field_dict[self.cc_type_field].lower().strip()
+        number = field_dict[self.cc_number_field].strip()
         number = number.replace(' ', '')
         number = number.replace('-', '')
         try:
             long(number)
         except ValueError:
-            return {self._cc_number_field: self.message('invalidNumber', state)}
+            return {self.cc_number_field: self.message('invalidNumber', state)}
 
-        assert _cardInfo.has_key(ccType), "I can't validate that type of credit card"
+        assert self._cardInfo.has_key(ccType), (
+            "I can't validate that type of credit card")
         foundValid = False
         validLength = False
         for prefix, length in self._cardInfo[ccType]:
@@ -1474,12 +1501,12 @@ class CreditCardValidator(FormValidator):
                 foundValid = True
                 break
         if not validLength:
-            return {self._cc_number_field: self.message('badLength', state)}
+            return {self.cc_number_field: self.message('badLength', state)}
         if not foundValid:
-            return {self._cc_number_field: self.message('invalidNumber', state)}
+            return {self.cc_number_field: self.message('invalidNumber', state)}
 
-        if not _validateMod10(number):
-            return {self._cc_number_field: self.message('invalidNumber', state)}
+        if not self._validateMod10(number):
+            return {self.cc_number_field: self.message('invalidNumber', state)}
         return None
 
     def _validateMod10(self, s):
@@ -1489,7 +1516,8 @@ class CreditCardValidator(FormValidator):
         double = 0
         sum = 0
         for i in range(len(s) - 1, -1, -1):
-            for c in str((double + 1) * int(s[i])): sum = sum + int(c)
+            for c in str((double + 1) * int(s[i])):
+                sum = sum + int(c)
             double = (double + 1) % 2
         return((sum % 10) == 0)
 

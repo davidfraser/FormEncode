@@ -18,7 +18,7 @@ represent lists in this model, you use indexes, and the lists are
 explicitly ordered.
 """
 
-import validators
+import api
 
 def variable_decode(d):
     """
@@ -66,7 +66,7 @@ def variable_decode(d):
                 else:
                     place[new_keys[-1]].append(value)
             else:
-                if instance(value, list):
+                if isinstance(value, list):
                     place[new_keys[-1]] = [place[new_keys[-1]]]
                     place[new_keys[-1]].extend(value)
                 else:
@@ -127,7 +127,7 @@ def variable_encode(d, prepend='', result=None):
         result[prepend] = d
     return result
 
-class NestedVariables(validators.FancyValidator):
+class NestedVariables(api.FancyValidator):
 
     protocol = ['http']
 

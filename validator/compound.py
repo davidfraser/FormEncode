@@ -67,7 +67,7 @@ class CompoundValidator(Validator):
         return self.attempt_convert(value, state,
                                     to_python)
     
-    def from_python(self, value, state):
+    def from_python(self, value, state=None):
         return self.attempt_convert(value, state,
                                     from_python)
 
@@ -107,7 +107,7 @@ class All(CompoundValidator):
             for validator in self.validators:
                 value = validate(validator, value, state)
             return value
-        except Invalid, e:
+        except Invalid:
             if self.if_invalid is NoDefault:
                 raise
             return self.if_invalid

@@ -29,7 +29,6 @@ def to_python(validator, value, state=None):
     validators.  (These protocols are distinct from the `protocols`
     package's concept)
     """
-    old = validator
     validator = adapt_validator(validator, state=state)
     if validator:
         return validator.to_python(value, state)
@@ -161,7 +160,7 @@ class Validator(Declarative):
     def message(self, msgName, state, **kw):
         try:
             return self._messages[msgName] % kw
-        except KeyError, e:
+        except KeyError:
             raise KeyError, "Key not found for %r=%r %% %r" \
                   % (msgName, self._messages.get(msgName), kw)
 
@@ -277,7 +276,7 @@ class FancyValidator(Validator):
                                     self._to_python,
                                     self.validate_python)
     
-    def from_python(self, value, state):
+    def from_python(self, value, state=None):
         return self.attempt_convert(value, state,
                                     self.validate_python,
                                     self._from_python,
