@@ -18,8 +18,7 @@
 <input type="text" name="whatever" value="">
 </form>
 ----
-def check(parser):
-    schema = parser.schema()
+def check(parser, schema):
     assert schema
     names = schema.fields.keys()
     names.sort()

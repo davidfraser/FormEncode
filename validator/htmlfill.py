@@ -1,8 +1,6 @@
 import HTMLParser
 import cgi
 
-import validators, schema, compound
-
 def default_formatter(error):
     return '<span class="error-message">%s</span><br />\n' % cgi.escape(error)
 
@@ -11,14 +9,6 @@ def none_formatter(error):
 
 def escape_formatter(error):
     return cgi.escape(error, 1)
-
-default_validators = dict([(name.lower(), getattr(validators, name)) for name in dir(validators)])
-
-def get_messages(cls, message):
-    if not message:
-        return {}
-    else:
-        return dict([(k, message) for k in cls._messages.keys()])
 
 class FillingParser(HTMLParser.HTMLParser):
     r"""
@@ -54,7 +44,7 @@ class FillingParser(HTMLParser.HTMLParser):
 
     def __init__(self, defaults, errors=None, use_all_keys=False,
                  error_formatters=None, error_class='error',
-                 add_attributes=None, validators=default_validators):
+                 add_attributes=None, listener=None):
         HTMLParser.HTMLParser.__init__(self)
         self.content = []
         self.source = None
@@ -78,14 +68,14 @@ class FillingParser(HTMLParser.HTMLParser):
             self.error_formatters = error_formatters
         self.error_class = error_class
         self.add_attributes = add_attributes or {}
-        self.validators = validators
-        self._schema = None
+        self.listener = listener
 
     def feed(self, data):
         self.source = data
         self.lines = data.split('\n')
         self.source_pos = 1, 0
-        self._schema = schema.Schema()
+        if self.listener:
+            self.listener.reset()
         HTMLParser.HTMLParser.feed(self, data)
 
     def close(self):
@@ -132,7 +122,8 @@ class FillingParser(HTMLParser.HTMLParser):
             return
         else:
             return
-        self.update_schema(attrs)
+        if self.listener:
+            self.listener.listen_input(self, tag, attrs)
 
     def handle_misc(self, whatever):
         self.write_pos()
@@ -309,9 +300,6 @@ class FillingParser(HTMLParser.HTMLParser):
                 vinst = vclass(messages=get_messages(vclass, message))
             v.validators.append(vinst)
         self._schema.add_field(name, v)
-
-    def schema(self):
-        return self._schema
 
     def write_text(self, text):
         self.content.append(text)

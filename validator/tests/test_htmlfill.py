@@ -10,6 +10,7 @@ from validator import htmlfill
 from validator.doctest_xml_compare import xml_compare
 from elementtree import ElementTree as et
 from xml.parsers.expat import ExpatError
+from validator import htmlfill_schemabuilder
 
 def test_inputoutput():
     data_dir = os.path.join(os.path.dirname(__file__), 'htmlfill_data')
@@ -41,12 +42,13 @@ def run_filename(filename):
         checker = data['check']
         del data['check']
     else:
-        def checker(p):
+        def checker(p, s):
             pass
     for name in data.keys():
         if name.startswith('_') or hasattr(__builtins__, name):
             del data[name]
-    p = htmlfill.FillingParser(**data)
+    listener = htmlfill_schemabuilder.SchemaBuilder()
+    p = htmlfill.FillingParser(listener=listener, **data)
     p.feed(template)
     p.close()
     output = p.text()
@@ -65,5 +67,4 @@ def run_filename(filename):
         print '---- Expected: ----'
         print expected
         assert 0
-    checker(p)
-    
+    checker(p, listener.schema())
