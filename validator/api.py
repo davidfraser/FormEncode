@@ -244,7 +244,7 @@ class FancyValidator(Validator):
 
     messages = {
         'empty': "Please enter a value",
-        'badType': "The input must be a string (not a %(type)s)",
+        'badType': "The input must be a string (not a %(type)s: %(value)r)",
         'noneType': "The input must be a string (not None)",
         }
 
@@ -291,7 +291,8 @@ class FancyValidator(Validator):
                 raise Invalid(self.message('noneType', state),
                               value, state)
             raise Invalid(self.message('badType', state,
-                                       type=str(type(value))),
+                                       type=str(type(value)),
+                                       value=value),
                           value, state)
 
     validate_python = None
