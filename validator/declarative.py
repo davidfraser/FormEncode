@@ -18,14 +18,24 @@ Also, you can define a __classinit__(cls) method, which will be called
 when the class is created (including subclasses).
 """
 
+from __future__ import generators
+
 import copy
 try:
     from cStringIO import StringIO
 except ImportError:
     from StringIO import StringIO
-import itertools
 
-counter = itertools.count()
+try:
+    import itertools
+    counter = itertools.count()
+except ImportError:
+    def _counter():
+        i = 0
+        while 1:
+            i += 1
+            yield i
+    counter = _counter()
 
 class classinstancemethod(object):
     """
