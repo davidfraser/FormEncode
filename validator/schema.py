@@ -54,7 +54,8 @@ class Schema(FancyValidator):
     A schema validates a dictionary of values, applying different
     validators (be key) to the different values.  If
     allow_extra_fields=True, keys without validators will be allowed;
-    otherwise they will raise Invalid.
+    otherwise they will raise Invalid. If filter_extra_fields is
+    set to true, then extra fields are not passed back in the results.
 
     Validators are associated with keys either with a class syntax, or
     as keyword arguments (class syntax is usually easier).  Something
@@ -80,6 +81,7 @@ class Schema(FancyValidator):
     chained_validators = []
     pre_validators = []
     allow_extra_fields = False
+    filter_extra_fields = False
     compound = True
     fields = {}
     order = []
@@ -114,7 +116,8 @@ class Schema(FancyValidator):
                                          name=repr(name)),
                             value_dict, state)
                     else:
-                        new[name] = value
+                        if not self.filter_extra_fields:
+                            new[name] = value
                         continue
                 validator = adapt_validator(self.fields[name], state)
 
@@ -178,7 +181,8 @@ class Schema(FancyValidator):
                             self.message('notExpected', state,
                                          name=repr(name)),
                             value_dict, state)
-                    new[name] = value
+                    if not self.filter_extra_fields:
+                        new[name] = value
                 else:
                     try:
                         new[name] = from_python(self.fields[name],
