@@ -32,10 +32,17 @@ def run_filename(filename):
         assert 0, "Too many sections"
     else:
         data_content = ''
-    data = {}
+    namespace = {}
     if data_content:
-        exec data_content in data
+        exec data_content in namespace
+    data = namespace.copy()
     data['defaults'] = data.get('defaults', {})
+    if data.has_key('check'):
+        checker = data['check']
+        del data['check']
+    else:
+        def checker(p):
+            pass
     for name in data.keys():
         if name.startswith('_') or hasattr(__builtins__, name):
             del data[name]
@@ -58,3 +65,5 @@ def run_filename(filename):
         print '---- Expected: ----'
         print expected
         assert 0
+    checker(p)
+    
