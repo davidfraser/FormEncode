@@ -81,9 +81,13 @@ class FillingParser(HTMLParser.HTMLParser):
             assert not unused, (
                 "These keys from defaults were not used in the form: %s"
                 % unused.keys())
-            assert not unused_errors, (
-                "These keys from errors were not used in the form: %s"
-                % unused_errors.keys())
+            if unused_errors:
+                error_text = []
+                for key in unused_errors.keys():
+                    error_text.append("%s: %s" % (key, self.errors[key]))
+                assert False, (
+                    "These errors were not used in the form: %s" % 
+                    ', '.join(error_text))
 
     def add_key(self, key):
         self.used_keys[key] = 1
