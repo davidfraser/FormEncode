@@ -37,7 +37,8 @@ class FillingParser(HTMLParser.HTMLParser):
     """
 
     def __init__(self, defaults, errors=None, use_all_keys=False,
-                 error_formatters=None, error_class='error'):
+                 error_formatters=None, error_class='error',
+                 add_attributes=None):
         HTMLParser.HTMLParser.__init__(self)
         self.content = []
         self.source = None
@@ -58,6 +59,7 @@ class FillingParser(HTMLParser.HTMLParser):
         else:
             self.error_formatters = error_formatters
         self.error_class = error_class
+        self.add_attributes = add_attributes or {}
 
     def feed(self, data):
         self.source = data
@@ -152,6 +154,15 @@ class FillingParser(HTMLParser.HTMLParser):
         t = (self.get_attr(attrs, 'type') or 'text').lower()
         name = self.get_attr(attrs, 'name')
         value = self.defaults.get(name)
+        if self.add_attributes.has_key(name):
+            for attr_name, attr_value in self.add_attributes[name].items():
+                if attr_name.startswith('+'):
+                    attr_name = attr_name[1:]
+                    self.set_attr(attrs, attr_name,
+                                  self.get_attr(attrs, attr_name, '')
+                                  + attr_value)
+                else:
+                    self.set_attr(attrs, attr_name, attr_value)
         if (self.error_class
             and self.errors.get(self.get_attr(attrs, 'name'))):
             self.add_class(attrs, self.error_class)
@@ -224,7 +235,7 @@ class FillingParser(HTMLParser.HTMLParser):
         self.content.append(text)
 
     def write_tag(self, tag, attrs):
-        attr_text = ''.join([' %s="%s"' % (n, cgi.escape(v, 1))
+        attr_text = ''.join([' %s="%s"' % (n, cgi.escape(str(v), 1))
                              for (n, v) in attrs])
         self.write_text('<%s%s>' % (tag, attr_text))
 
