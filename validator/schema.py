@@ -149,6 +149,60 @@ class Schema(FancyValidator):
                 state.key = previous_key
                 state.full_dict = previous_full_dict
 
+    def _from_python(self, value_dict, state):
+        for validator in self.chained_validators:
+            value_dict = from_python(validator, value_dict, state)
+        new = {}
+        errors = {}
+        unused = self.fields.keys()
+        if state is not None:
+            previous_key = getattr(state, 'key', None)
+            previous_full_dict = getattr(state, 'full_dict', None)
+            state.full_dict = value_dict
+        try:
+            for name, value in value_dict.items():
+                try:
+                    unused.remove(name)
+                except ValueError:
+                    if not self.allow_extra_fields:
+                        raise Invalid(
+                            self.message('notExpected', state,
+                                         name=repr(name)),
+                            value_dict, state)
+                else:
+                    new[name] = value
+                    continue
+                validator = adapt_validator(self.fields[name], state)
+
+                try:
+                    new[name] = validator.from_python(value, state)
+                except Invalid, e:
+                    errors[name] = e
+
+            for name in unused:
+                validator = adapt_validator(self.fields[name], state)
+                try:
+                    new[name] = validator.from_python(None, state)
+                except Invalid, e:
+                    errors[name] = e
+
+            if errors:
+                raise Invalid(
+                    format_compound_error(errors),
+                    value_dict, state,
+                    error_dict=errors)
+            
+            for validaor in self.pre_validators:
+                new = from_python(validator, new, state)
+
+            return new
+            
+        finally:
+            if state is not None:
+                state.key = previous_key
+                state.full_dict = previous_full_dict
+            
+
 
     def add_chained_validator(self, cls, validator):
         if self is not None:
