@@ -17,8 +17,8 @@ Using Validation
 
 Validation and conversion happen simultaneously.  Frequently you
 cannot convert a value without ensuring its validity, and validation
-problems can occur in the middle of conversion.  The "Encode" in
-"FormEncode" refers to this conversion.
+problems can occur in the middle of conversion.  In many ways, this is
+meant as a general encoding/decoding system.
 
 The basic metaphor for validation is *to_python* and *from_python*.  In
 this context "Python" is meant to refer to "here" -- the trusted
@@ -32,22 +32,22 @@ process (*from_python* is usually the less interesting of the pair).
 The core of this validation process is two functions and an
 exception::
 
-    >>> from FormEncode import validators
+    >>> from validator import validators
     >>> validator = validators.Int()
     >>> validators.to_python(validator, "10")
     10
     >>> validators.to_python(validator, "ten")
     Traceback (most recent call last):
       File "<stdin>", line 1, in ?
-      File "FormEncode/validators.py", line 102, in to_python
+      File "validator/validators.py", line 102, in to_python
         return validator.to_python(value, state)
-      File "FormEncode/validators.py", line 247, in to_python
+      File "validator/validators.py", line 247, in to_python
         self.validate_python)
-      File "FormEncode/validators.py", line 231, in attemptConvert
+      File "validator/validators.py", line 231, in attempt_convert
         converted = convert(value, state)
-      File "FormEncode/validators.py", line 844, in _to_python
+      File "validator/validators.py", line 844, in _to_python
         {}, value, state)
-    FormEncode.validators.Invalid: Please enter an integer value.  Value: 'ten'
+    validator.validators.Invalid: Please enter an integer value.  Value: 'ten'
 
 Sorry about the traceback.  ``"ten"`` isn't a valid integer, so we get
 a ``validators.Invalid`` exception.  Typically we'd catch that
@@ -77,7 +77,7 @@ and lists), which we'll talk about later__.
 While validators have a ``to_python`` method, we typically use the
 ``to_python`` *function* because it handles adaptation_ and a few other
 small details.  Adaptation allows an object to turn into another
-object based on interface (the ``FormEncode.interfaces.IValidator``
+object based on interface (the ``validator.interfaces.IValidator``
 interface, in this case).  This is a common situation with validation,
 as objects typically require validation, but aren't necessarily
 validators themselves -- you can add your own adapters to generate
@@ -95,47 +95,47 @@ Compound Validators
 
 While validating single values is useful, it's only a *little* useful.
 Much more interesting is validating a set of values.  This is called a
-*Schema* in FormEncode.
+*Schema*.
 
 For instance, imagine a registration form for a website.  It takes the
 following fields, with restrictions:
 
-* firstName (not empty)
-* lastName (not empty)
+* first_name (not empty)
+* last_name (not empty)
 * email (not empty, valid email)
 * username (not empty, unique)
 * password (reasonably secure)
-* passwordConfirm (matches password)
+* password_confirm (matches password)
 
 We express this as a *single* validator::
 
-    from FormEncode.Schema import Schema
-    from FormEncode import validators
+    from validator.schema import Schema
+    from validator import validators
 
     class Registration(Schema):
-        firstName = validators.String(not_empty=True)
-        lastName = validators.String(not_empty=True)
-        email = validators.Email(resolveDomain=True)
+        first_name = validators.String(not_empty=True)
+        last_name = validators.String(not_empty=True)
+        email = validators.Email(resolve_domain=True)
         username = validators.All(validators.PlainText(),
-                                 UniqueUsername())
+                                  UniqueUsername())
         password = SecurePassword()
-        passwordConfirm = validators.String()
+        password_confirm = validators.String()
 
-        chainedValidators = [validators.FieldsMatch('password',
-                                                   'passwordConfirm')]
+        chained_validators = [validators.FieldsMatch('password',
+                                                     'password_confirm')]
 
 Like any other validator, a ``Registration`` instance can be used with
 the ``to_python`` and ``from_python`` functions.  The input should be a
-dictionary, with keys like ``"firstName"``, ``"password"``, etc.  The
+dictionary, with keys like ``"first_name"``, ``"password"``, etc.  The
 validators will be applied to each of the values of the dictionary.
 *All* the values will be validated, so if there are multiple invalid
 fields you will get information about all of them.
 
-.. _preValidators:
-.. _chainedValidators:
+.. _pre_validators:
+.. _chained_validators:
 
-``chainedValidators`` are validators that are run on the entire
-dictionary after other validation is done (``preValidators`` are
+``chained_validators`` are validators that are run on the entire
+dictionary after other validation is done (``pre_validators`` are
 applied before the schema validation).  In this case
 ``validators.FieldsMatch`` checks that the value of the two fields are
 the same (i.e., that the password matches the confirmation).
@@ -169,19 +169,19 @@ Writing Your Own Validator
 --------------------------
 
 There were some validators in the ``Registration`` example which
-aren't part of FormEncode.  It's fairly easy to write your own
+aren't part of Validator.  It's fairly easy to write your own
 validator.  For instance::
 
     class SecurePassword(validators.FancyValidator):
 
         min = 3
-        nonLetter = 1
-	letterRegex = re.compile(r'[a-zA-Z]')
+        non_letter = 1
+	letter_regex = re.compile(r'[a-zA-Z]')
 
         messages = {
-            'tooFew': 'Your password must be longer than %(min)i '
+            'too_few': 'Your password must be longer than %(min)i '
                       'characters long',
-            'nonLetter': 'You must include at least %(nonLetter)i '
+            'non_letter': 'You must include at least %(non_letter)i '
                          'characters in your password',
             }
 
@@ -193,12 +193,12 @@ validator.  For instance::
 
         def validate_python(self, value, state):
             if len(value) < self.min:
-                raise Invalid(self.message("tooFew", min=self.min),
+                raise Invalid(self.message("too_few", min=self.min),
                               value, state)
-            nonLetters = self.letterRegex.sub('', value)
-            if len(nonLetters) < self.nonLetter:
-                raise Invalid(self.message("nonLetter", 
-                                           nonLetter=self.nonLetter),
+            non_letters = self.letter_regex.sub('', value)
+            if len(non_letters) < self.non_letter:
+                raise Invalid(self.message("non_letter", 
+                                            non_letter=self.non_letter),
                               value, state)
 
 (Your validator can be simpler than this too, but this example shows
@@ -235,10 +235,9 @@ own validators.
 
 The use of ``self.message(...)`` is meant to make the messages easy to
 format for different environments, and replacable (with translations,
-or simply with different text).  Each string should have an identifier
-(``"min"`` and ``"nonLetter"`` in this example) and a default string
-(the second argument to ``self.message()``).  The second argument to
-``Invalid`` is a dictionary of values to substitute into the string.
+or simply with different text).  Each message should have an
+identifier (``"min"`` and ``"non_letter"`` in this example).  The
+keyword arguments to ``message`` are used for message substitution.
 See Messages_ for more.
 
 Other Validator Usage
@@ -255,7 +254,9 @@ to set these.  These are (effectively) equivalent::
     plain = Plain()
 
 When dealing with nested validators this class syntax is often easier
-to work with, and better displays the structure.
+to work with, and better displays the structure.  Classes are
+generally implicitly converted to instances, so you can simply use a
+class definition in many places without instantiating it.
 
 .. _FancyValidator:
 
@@ -302,12 +303,12 @@ depending on the needs of the protocol (e.g., HTTP needs strings to be
 converted to integers, but XML-RPC has native integers).
 
 Also, during compound validation (a ``Schema`` or ``ForEach``) the
-state (if not None) will have the instance variables added to it.
+state (if not None) will have more instance variables added to it.
 During a ``Schema`` (dictionary) validation the instance variable
-``key`` and ``fullDict`` will be added -- ``key`` is the current key
-(i.e., validator name), and ``fullDict`` is the rest of the values
+``key`` and ``full_dict`` will be added -- ``key`` is the current key
+(i.e., validator name), and ``full_dict`` is the rest of the values
 being validated.  During a ``ForEeach`` (list) validation, ``index``
-and ``fullList`` will be set.
+and ``full_list`` will be set.
 
 Invalid Exceptions
 ------------------
@@ -335,7 +336,7 @@ Messages, Language Customization
 --------------------------------
 
 All of the error messages can be customized.  Each error message has a
-key associated with it, like ``"tooFew"`` in the registration example.
+key associated with it, like ``"too_few"`` in the registration example.
 You can overwrite these messages by using you own ``messages = {"key":
 "text"}`` in the class statement, or as an argument when you call a
 class.  Either way, you do not lose messages that you do not define,
@@ -366,7 +367,7 @@ ForEach deal with these structures well.  HTML forms, however, do not
 produce nested structures -- they produce flat structures with keys
 (input names) and associated values.
 
-FormEncode includes the module ``VariableDecode``, which allows you to
+Validator includes the module ``variabledecode``, which allows you to
 encode nested dictionary and list structures into a flat dictionary.
 
 To do this it uses keys with ``"."`` for nested dictionaries, and
@@ -412,7 +413,7 @@ used for sorting, missing numbers in a sequence are ignored).
 encodes dictionaries using this algorithm.  It has the `protocol
 attribute`_ set to ``"http"`` so that it won't encode XML-RPC or other
 input (for which it is not required).  You can use it with a Schema's
-`preValidators`_ attribute.
+`pre_validators`_ attribute.
 
 Of course, in the example we use the data is rather eclectic -- for
 instance, Tim Smith doesn't have his name separated into first and
@@ -426,7 +427,7 @@ preferable.
 Adaptation and Interfaces
 -------------------------
 
-FormEncode keeps all its interfaces in a module named ``interfaces``,
+Validator keeps all its interfaces in a module named ``interfaces``,
 as is the convention.  Validators use an ``IValidator`` interface.
 Objects that can be adapted to ``IValidator`` can be used with the
 ``to_python`` and ``from_python`` functions.  
@@ -437,7 +438,7 @@ a validator.
 You can add your own validator adapters like::
 
     import protocols
-    from FormEncode.interfaces import IValidator
+    from validator.interfaces import IValidator
     
     class MyClass(object):
         ....
