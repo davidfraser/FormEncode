@@ -2,7 +2,7 @@ import HTMLParser
 import cgi
 
 def default_formatter(error):
-    return '<span class="error">%s</span><br>\n' % error
+    return '<span class="error-message">%s</span><br>\n' % error
 
 class FillingParser(HTMLParser.HTMLParser):
     r"""
@@ -37,7 +37,7 @@ class FillingParser(HTMLParser.HTMLParser):
     """
 
     def __init__(self, defaults, errors=None, use_all_keys=False,
-                 error_formatters=None):
+                 error_formatters=None, error_class='error'):
         HTMLParser.HTMLParser.__init__(self)
         self.content = []
         self.source = None
@@ -57,6 +57,7 @@ class FillingParser(HTMLParser.HTMLParser):
             self.error_formatters = {'default': default_formatter}
         else:
             self.error_formatters = error_formatters
+        self.error_class = error_class
 
     def feed(self, data):
         self.source = data
@@ -151,6 +152,9 @@ class FillingParser(HTMLParser.HTMLParser):
         t = (self.get_attr(attrs, 'type') or 'text').lower()
         name = self.get_attr(attrs, 'name')
         value = self.defaults.get(name)
+        if (self.error_class
+            and self.errors.get(self.get_attr(attrs, 'name'))):
+            self.add_class(attrs, self.error_class)
         if t == 'text' or t == 'hidden':
             self.set_attr(attrs, 'value', value or '')
             self.write_tag('input', attrs)
@@ -166,9 +170,9 @@ class FillingParser(HTMLParser.HTMLParser):
             self.add_key(name)
         elif t == 'radio':
             if str(value) == self.get_attr(attrs, 'value'):
-                self.set_attr(attrs, 'selected', 'selected')
+                self.set_attr(attrs, 'checked', 'checked')
             else:
-                self.del_attr(attrs, 'selected')
+                self.del_attr(attrs, 'checked')
             self.write_tag('input', attrs)
             self.skip_next = True
             self.add_key(name)
@@ -179,6 +183,9 @@ class FillingParser(HTMLParser.HTMLParser):
                    % (t, self.getpos())
 
     def handle_textarea(self, attrs):
+        if (self.error_class
+            and self.errors.get(self.get_attr(attrs, 'name'))):
+            self.add_class(attrs, self.error_class)
         self.write_tag('textarea', attrs)
         name = self.get_attr(attrs, 'name')
         value = self.defaults.get(name, '')
@@ -192,6 +199,9 @@ class FillingParser(HTMLParser.HTMLParser):
         self.skip_next = True
 
     def handle_select(self, attrs):
+        if (self.error_class
+            and self.errors.get(self.get_attr(attrs, 'name'))):
+            self.add_class(attrs, self.error_class)
         self.in_select = self.get_attr(attrs, 'name')
 
     def handle_end_select(self):
@@ -255,6 +265,11 @@ class FillingParser(HTMLParser.HTMLParser):
             if attr[i][0].lower() == name:
                 del attr[i]
                 break
+
+    def add_class(self, attr, class_name):
+        current = self.get_attr(attr, 'class', '')
+        new = current + ' ' + class_name
+        self.set_attr(attr, 'class', new.strip())
             
     def text(self):
         return ''.join(self.content)
