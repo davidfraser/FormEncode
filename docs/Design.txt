@@ -97,6 +97,34 @@ But I leave this to the reader.
 
 .. _adapted:
 
+Two sides, two aspects
+======================
+
+Validator does both validation and version at the same time.
+Validation necessarily happens with every conversion; for instance,
+you may want to convert string representation of dates to internal
+date objects; that conversion can fail if the string representation is
+malformed.
+
+To keep things simple, there's only one operation: conversion.  An
+exception raised means there was an error.  If you just want to
+validate, that's a conversion that doesn't do anything.
+
+Similarly, there's two sides to the system, the foreign data and the
+local data.  In Validator the local data is called "python" (meaning,
+a natural Python data structure), so we convert ``to_python`` and
+``from_python``.  Unlike some systems, Validator explicitly converts
+*both* directions.
+
+For instance, consider the date conversion.  In one form, you may want
+a date like ``mm/dd/yyyy``.  It's easy enough to make the necessary
+converter; but the date object that results doesn't know how it's
+supposed to be formatted for that form.  ``repr`` or *any* method that
+binds an object to its form representation is a bad idea.  The
+converter best knows how to undo its work.
+
+(This becomes even more interesting with compound validators.)
+
 Adaptation
 ==========
 
