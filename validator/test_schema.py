@@ -91,9 +91,9 @@ def addBad(schema, input, errors):
     SchemaTest.params_testBad.append((name, schema, input, errors))
 
 class Name(Schema):
-    fname = validators.String(notEmpty=True)
+    fname = validators.String(not_empty=True)
     mi = validators.String(max=1, if_missing=None, if_empty=None)
-    lname = validators.String(notEmpty=True)
+    lname = validators.String(not_empty=True)
 
 addGood(Name, 'fname=Ian&mi=S&lname=Bicking',
         d(fname='Ian', mi='S', lname='Bicking'))

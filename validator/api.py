@@ -231,7 +231,7 @@ class FancyValidator(Validator):
     * if_empty:
       If set, then this value will be returned if the input evaluates
       to false (empty list, empty string, None, etc).
-    * notEmpty:
+    * not_empty:
       If true, then if an empty value is given raise an error.
     * if_invalid:
       If set, then when this validator would raise Invalid, instead
@@ -240,7 +240,7 @@ class FancyValidator(Validator):
 
     if_invalid = NoDefault
     if_empty = NoDefault
-    notEmpty = False
+    not_empty = False
 
     messages = {
         'empty': "Please enter a value",
@@ -255,7 +255,7 @@ class FancyValidator(Validator):
         if not value:
             if self.if_empty is not NoDefault:
                 return self.if_empty
-            if self.notEmpty:
+            if self.not_empty:
                 raise Invalid(self.message('empty', state), value, state)
         try:
             if pre:
