@@ -2,6 +2,8 @@
 Validator Design
 ++++++++++++++++
 
+.. contents::
+
 This is a document to describe why Validator looks the way it looks,
 and how it fits into other applications.  It also talks some about the
 false starts I've made.
@@ -52,6 +54,8 @@ class like::
         fname = StringCol(notNull=True)
         lname = StringCol(notNull=True)
         mi = StringCol()
+
+.. _SQLObject: http://sqlobject.org
 
 It is tempting to take the restrictions of the ``Address`` class and
 automatically come up with a validation schema.  This may yet be a
