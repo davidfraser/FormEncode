@@ -506,7 +506,7 @@ class OneOf(FancyValidator):
 
     messages = {
         'invalid': "Invalid value",
-        'notIn': "Value must be one of: %(items)s",
+        'notIn': "Value must be one of: %(items)s (not %(value)r)",
         }
     
     def validate_python(self, value, state):
@@ -521,7 +521,8 @@ class OneOf(FancyValidator):
                 else:
                     items = '; '.join(map(str, self.list))
                     raise Invalid(self.message('notIn', state,
-                                               items=items),
+                                               items=items,
+                                               value=value),
                                   value, state)
 
 class DictConverter(FancyValidator):
