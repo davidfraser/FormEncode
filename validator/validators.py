@@ -656,36 +656,64 @@ class DateValidator(FancyValidator):
     """
     Validates that a date is within the given range.  Be sure to call
     DateConverter first if you aren't expecting mxDateTime input.
+
+    earliest_date and latest_date may be functions; if so, they will
+    be called each time before validating.
     """
     ## @@: This should work with datetime as well, and even better
     ## handle having some datetime and some mxDateTime dates working
     ## together.
 
-    earliestDate = None
-    latestDate = None
+    earliest_date = None
+    latest_date = None
+    after_now = False
 
     messages = {
         'after': "Date must be after %(date)s",
         'before': "Date must be before %(date)s",
         # Double %'s, because this will be substituted twice:
-        'dateFormat': "%%A, %%d %%B %%Y",
+        'date_format': "%%A, %%d %%B %%Y",
+        'future': "The date must be sometime in the future",
         }
 
     def validate_python(self, value, state):
-        if self.earliestDate and value < self.earliestDate:
-            date_formatted = self.earliestDate.strftime(
-                self.message('dateFormat', state))
-            raise Invalid(
-                self.message('after', state,
-                             date=date_formatted),
-                value, state)
-        if self.latestDate and value > self.latestDate:
-            date_formatted = self.latestDate.strftime(
-                self.message('dateFormat', state))
-            raise Invalid(
-                self.message('before', state,
-                             date=date_formatted),
-                value, state)
+        global DateTime
+        if self.earliest_date:
+            if callable(self.earliest_date):
+                earliest_date = self.earliest_date()
+            else:
+                earliest_date = self.earliest_date
+            if value < earliest_date:
+                date_formatted = earliest_date.strftime(
+                    self.message('date_format', state))
+                raise Invalid(
+                    self.message('after', state,
+                                 date=date_formatted),
+                    value, state)
+        if self.latest_date:
+            if callable(self.latest_date):
+                latest_date = self.latest_date()
+            else:
+                latest_date = self.latest_date
+            if value > latest_date:
+                date_formatted = latest_date.strftime(
+                    self.message('date_format', state))
+                raise Invalid(
+                    self.message('before', state,
+                                 date=date_formatted),
+                    value, state)
+        if self.after_now:
+            if DateTime is None:
+                from mx import DateTime
+            now = DateTime.now()
+            if value < now:
+                date_formatted = now.strftime(
+                    self.message('date_format', state))
+                raise Invalid(
+                    self.message('future', state,
+                                 date=date_formatted),
+                    value, state)
+        
 
 class Int(FancyValidator):
 
@@ -1071,7 +1099,7 @@ class DateConverter(FancyValidator):
         if self.accept_day:
             return self.convert_day(value, state)
         else:
-            return self.convert_month(value)
+            return self.convert_month(value, state)
 
     def convert_day(self, value, state):
         self.assert_string(value, state)
@@ -1139,7 +1167,7 @@ class DateConverter(FancyValidator):
             raise Invalid(self.message('wrongFormat', state,
                                        format='mm/yyyy'),
                           value, state)
-        month = self.make_month(match.group(1))
+        month = self.make_month(match.group(1), state)
         year = self.make_year(match.group(2), state)
         if month > 12 or month < 1:
             raise Invalid(self.message('monthRange', state),
