@@ -1,0 +1,1691 @@
+## FormEncode, a  Form processor
+## Copyright (C) 2003, Ian Bicking <ianb@colorstudy.com>
+##  
+## This library is free software; you can redistribute it and/or
+## modify it under the terms of the GNU Lesser General Public
+## License as published by the Free Software Foundation; either
+## version 2.1 of the License, or (at your option) any later version.
+##
+## This library is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+## Lesser General Public License for more details.
+##
+## You should have received a copy of the GNU Lesser General Public
+## License along with this library; if not, write to the Free Software
+## Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+##
+## NOTE: In the context of the Python environment, I interpret "dynamic
+## linking" as importing -- thus the LGPL applies to the contents of
+## the modules, but make no requirements on code importing these
+## modules.
+"""
+Validator/Converters for use with FormEncode.
+"""
+
+# Grab Webware's NoDefault if it exists...
+try:
+    from MiscUtils import NoDefault
+except ImportError:
+    class NoDefault:
+        pass
+import re
+import cgi
+html_encode = cgi.escape
+DateTime = None
+mxlookup = None
+from interfaces import *
+import protocols
+from declarative import Declarative, DeclarativeMeta
+
+True, False = (1==1), (0==1)
+
+class Invalid(Exception):
+
+    """
+    This is raised in response to invalid input.  It has several
+    public attributes:
+
+    msg:
+        The message, *without* values substituted.  For instance, if
+        you want HTML quoting of values, you can apply that.
+    substituteArgs:
+        The arguments (a dictionary) to go with `msg`.
+    str(self):
+        The message describing the error, with values substituted.
+    value:
+        The offending (invalid) value.
+    state:
+        The state that went with this validator.  This is an
+        application-specific object.
+    error_list:
+        If this was a compound validator that takes a repeating value,
+        and sub-validator(s) had errors, then this is a list of those
+        exceptions.  The list will be the same length as the number of
+        values -- valid values will have None instead of an exception.
+    error_dict:
+        Like `error_list`, but for dictionary compound validators.
+    """
+
+    def __init__(self, msg,
+                 value, state, error_list=None, error_dict=None):
+        Exception.__init__(self, msg)
+        self.msg = msg
+        self.value = value
+        self.state = state
+        self.error_list = error_list
+        self.error_dict = error_dict
+
+    def __str__(self):
+        val = self.msg
+        #if self.value:
+        #    val += " (value: %s)" % repr(self.value)
+        return val    
+
+def adapt_validator(obj, state=None):
+    try:
+        if isinstance(obj, type) and issubclass(obj, Declarative):
+            obj = obj.singleton()
+        validator = protocols.adapt(
+            obj, IValidator)
+        if validator and state:
+            validator = validator.validatorForState(state)
+        return validator
+    except protocols.AdaptationFailure:
+        return None
+
+def to_python(validator, value, state=None):
+    """
+    Validates `value` (with `state`) using `validator`.  Does the
+    appropriate adaptation as necessary.  Also handles the suppression
+    of validation if the state's protocol doesn't match the
+    validators.  (These protocols are distinct from the `protocols`
+    package's concept)
+    """
+    old = validator
+    validator = adapt_validator(validator, state=state)
+    if validator:
+        return validator.to_python(value, state)
+    else:
+        return value
+
+
+def from_python(validator, value, state=None):
+    """
+    Validates `value` (with `state`) using `validator`.  Does the
+    appropriate adaptation as necessary.  Also handles the suppression
+    of validation if the state's protocol doesn't match the
+    validators.  (These protocols are distinct from the `protocols`
+    package's concept)
+    """
+    # @@: Ack, this isn't right at all for adaptation:
+    if isinstance(validator, type):
+        validator = validator.singleton()
+    validator = adapt_validator(validator, state=state)
+    if validator:
+        return validator.from_python(value, state)
+    else:
+        return value
+
+############################################################
+## Base Classes
+############################################################
+
+class Validator(Declarative):
+
+    """
+    The base class of most validators.  See `IValidator` for more, and
+    `FancyValidator` for the more common (and more featureful) class.
+    """
+
+    protocols.advise(
+        instancesProvide=[IValidator])
+
+    _messages = {}
+    protocols = None
+    if_missing = NoDefault
+    repeating = False
+    compound = False
+
+    def __classinit__(cls):
+        if hasattr(cls, 'messages'):
+            cls._messages = cls._messages.copy()
+            cls._messages.update(cls.messages)
+            del cls.messages
+
+    def __init__(self, *args, **kw):
+        Declarative.__init__(self, *args, **kw)
+        if hasattr(self, 'messages'):
+            self._messages = self._messages.copy()
+            self._messages.update(self.messages)
+            del self.messages
+
+    def to_python(self, value, state=None):
+        return value
+
+    def from_python(self, value, state=None):
+        return value
+
+    def message(self, msgName, state, **kw):
+        try:
+            return self._messages[msgName] % kw
+        except KeyError, e:
+            raise KeyError, "Key not found for %r=%r %% %r" \
+                  % (msgName, self._messages.get(msgName), kw)
+
+    def validatorForState(self, state):
+        myProt = self.protocols
+        if myProt is None:
+            return self
+        stateProt = getattr(state, 'protocol', None)
+        if stateProt is None:
+            return self
+        if stateProt in myProt:
+            return self
+        return None
+
+class _Identity(Validator):
+    def __repr__(self):
+        return 'validators.Identity'
+Identity = _Identity()
+
+class FancyValidator(Validator):
+
+    """
+    FancyValidator is the (abstract) superclass for various validators
+    and converters.  A subclass can validate, convert, or do both.
+    There is no formal distinction made here.
+
+    Validators have two important external methods:
+    * .to_python(value, state):
+      Attempts to convert the value.  If there is a problem, or the
+      value is not valid, an Invalid exception is raised.  The
+      argument for this exception is the (potentially HTML-formatted)
+      error message to give the user.
+    * .from_python(value, state):
+      Reverses to_python.
+
+    Generally these are actually invoked from the top-level to_python()
+    and from_python() functions.  These functions also do protocol
+    matching, so that validators can cover only specific protocols.
+
+    There are five important methods for subclasses to override,
+    however none of these *have* to be overridden, only the ones that
+    are appropriate for the validator:
+    * __init__():
+      if the `Declarative` model doesn't work for this.
+    * .validate_python(value, state):
+      This should raise an error if necessary.  The value is a Python
+      object, either the result of to_python, or the input to
+      from_python.
+    * .validate_other(value, state):
+      Validates the source, before to_python, or after from_python.
+      It's more common to use `.validate_python()` however.
+    * ._to_python(value, state):
+      This returns the converted value, or raises an Invalid
+      exception if there is an error.  The argument to this exception
+      should be the error message.
+    * ._from_python(value, state):
+      Should undo .to_python() in some reasonable way, returning
+      a string.
+
+    Validators should have no internal state besides the
+    values given at instantiation.  They should be reusable and
+    reentrant.
+
+    All subclasses can take the arguments/instance variables:
+    * if_empty:
+      If set, then this value will be returned if the input evaluates
+      to false (empty list, empty string, None, etc).
+    * notEmpty:
+      If true, then if an empty value is given raise an error.
+    * if_invalid:
+      If set, then when this validator would raise Invalid, instead
+      return this value.
+    """
+
+    if_invalid = NoDefault
+    if_empty = NoDefault
+    notEmpty = False
+
+    messages = {
+        'empty': "Please enter a value",
+        'badType': "The input must be a string (not a %(type)s)",
+        'noneType': "The input must be a string (not None)",
+        }
+
+    def attemptConvert(self, value, state, pre, convert, post):
+        """
+        Handles both .to_python() and .from_python().
+        """
+        if not value:
+            if self.if_empty is not NoDefault:
+                return self.if_empty
+            if self.notEmpty:
+                raise Invalid(self.message('empty', state), value, state)
+        try:
+            if pre:
+                pre(value, state)
+            if convert:
+                converted = convert(value, state)
+            else:
+                converted = value
+            if post:
+                post(value, state)
+            return converted
+        except Invalid:
+            if self.if_invalid is NoDefault:
+                raise
+            else:
+                return self.if_invalid
+
+    def to_python(self, value, state=None):
+        return self.attemptConvert(value, state,
+                                   self.validate_other,
+                                   self._to_python,
+                                   self.validate_python)
+
+    def from_python(self, value, state):
+        return self.attemptConvert(value, state,
+                                   self.validate_python,
+                                   self._from_python,
+                                   self.validate_other)
+
+    def assert_string(self, value, state):
+        if not isinstance(value, (str, unicode)):
+            if value is None:
+                raise Invalid(self.message('noneType', state),
+                              value, state)
+            raise Invalid(self.message('badType', state,
+                                       type=html_encode(str(type(value)))),
+                          value, state)
+
+    validate_python = None
+    validate_other = None
+    _to_python = None
+    _from_python = None
+
+############################################################
+## Compound Validators
+############################################################
+
+class CompoundValidatorMeta(DeclarativeMeta):
+    
+    def __new__(meta, class_name, bases, d):
+        cls = DeclarativeMeta.__new__(meta, class_name, bases, d)
+        cls.validators = cls.validators[:]
+        toAdd = []
+        for name, value in d.items():
+            if name in ('view',):
+                continue
+            validator = adapt_validator(value)
+            if validator and validator is not Identity:
+                toAdd.append((name, value))
+                # @@: Should we really delete too?
+                delattr(cls, name)
+        toAdd.sort()
+        cls.validators.extend([v for n, v in toAdd])
+        return cls
+
+class CompoundValidator(Validator):
+
+    __metaclass__ = CompoundValidatorMeta
+
+    if_invalid = NoDefault
+
+    validators = []
+
+    __unpackargs__ = ('*', 'validatorArgs')
+
+    __mutableattributes__ = ('validators',)
+
+    def __init__(self, *args, **kw):
+        Validator.__init__(self, *args, **kw)
+        self.validators = self.validators[:]
+        self.validators.extend(self.validatorArgs)
+
+    def _reprVars(names):
+        return [n for n in Validator._reprVars(names)
+                if n != 'validatorArgs']
+    _reprVars = staticmethod(_reprVars)
+
+    def validatorForState(self, state):
+        if Validator.validatorForState(self, state) is None:
+            return None
+        changes = 0
+        new = []
+        for validator in self.validators:
+            v = adapt_validator(validator, state=state)
+            if v is not validator:
+                changes = 1
+            if v is not None:
+                new.append(v)
+        if not changes:
+            return self
+        return self(validators=new)
+
+    def attemptConvert(self, value, state, convertFunc):
+        raise NotImplementedError, "Subclasses must implement attemptConvert"
+
+    def to_python(self, value, state=None):
+        return self.attemptConvert(value, state,
+                                   to_python)
+
+    def from_python(self, value, state):
+        return self.attemptConvert(value, state,
+                                   from_python)
+
+class Any(CompoundValidator):
+    
+    """
+    This class is like an 'or' operator for validators.  The first
+    validator/converter that validates the value will be used.  (You
+    can pass in lists of validators, which will be ANDed)
+    """
+
+    def attemptConvert(self, value, state, convertFunc):
+        lastException = None
+        for validator in self.validators:
+            try:
+                return convertFunc(validator, value, state)
+            except Invalid, e:
+                lastException = e
+        if self.if_invalid is NoDefault:
+            raise lastException
+        else:
+            return self.if_invalid
+
+class All(CompoundValidator):
+
+    """
+    This class is like an 'and' operator for validators.  All
+    validators must work, and the results are passed in turn through
+    all validators for conversion.
+    """
+
+    def __repr__(self):
+        return '<All %s>' % self.validators
+
+    def attemptConvert(self, value, state, validate):
+        try:
+            for validator in self.validators:
+                value = validate(validator, value, state)
+            return value
+        except Invalid, e:
+            if self.if_invalid is NoDefault:
+                raise
+            return self.if_invalid
+
+    def with_validator(self, validator):
+        """
+        Adds the validator (or list of validators) to a copy of
+        this validator.
+        """
+        new = self.validators[:]
+        if isinstance(validator, list) or isinstance(validator, tuple):
+            new.extend(validator)
+        else:
+            new.append(validator)
+        return self.__class__(*new, **{'if_invalid': self.if_invalid})
+
+    def join(cls, *validators):
+        """
+        Joins several validators together as a single validator,
+        filtering out None and trying to keep `All` validators from
+        being nested (which isn't needed).
+        """
+        validators = filter(lambda v: v and v is not Identity, validators)
+        if not validators:
+            return Identity
+        if len(validators) == 1:
+            return validators[0]
+        elif isinstance(validators[0], All):
+            return validators[0].with_validator(validators[1:])
+        else:
+            return cls(*validators)
+    join = classmethod(join)
+
+    def if_missing__get(self):
+        for validator in self.validators:
+            v = adapt_validator(validator).if_missing
+            if v is not NoDefault:
+                return v
+        return NoDefault
+    if_missing = property(if_missing__get)
+
+def _adaptListToAll(v, protocol):
+    if not v:
+        return Identity
+    if len(v) == 1:
+        return adapt_validator(v[0])
+    return All(*v)
+
+protocols.declareAdapter(_adaptListToAll, [IValidator],
+                         forTypes=[list, tuple])
+
+############################################################
+## Wrapper Validators
+############################################################
+
+class ConfirmType(FancyValidator):
+
+    """
+    Confirms that the input/output is of the proper type, using:
+
+    subclass:
+        The class or a tuple of classes; the item must be an instance
+        of the class or a subclass.
+    type:
+        A type or tuple of types (or classes); the item must be of
+        the exact class or type.  Subclasses are not allowed.
+
+    Examples::
+    
+        >>> cint = ConfirmType(subclass=int)
+        >>> to_python(cint, True)
+        True
+        >>> to_python(cint, '1')
+        Traceback (most recent call last):
+            ...
+        Invalid: '1' is not a subclass of <type 'int'>
+        >>> cintfloat = ConfirmType(subclass=(float, int))
+        >>> to_python(cintfloat, 1.0), from_python(cintfloat, 1.0)
+        (1.0, 1.0)
+        >>> to_python(cintfloat, 1), from_python(cintfloat, 1)
+        (1, 1)
+        >>> to_python(cintfloat, None)
+        Traceback (most recent call last):
+            ...
+        Invalid: None is not a subclass of one of the types <type 'float'>, <type 'int'>
+        >>> cint2 = ConfirmType(type=int)
+        >>> from_python(cint2, True)
+        Traceback (most recent call last):
+            ...
+        Invalid: True must be of the type <type 'int'>
+    """
+
+    subclass = None
+    type = None
+
+    messages = {
+        'subclass': "%(object)r is not a subclass of %(subclass)s",
+        'inSubclass': "%(object)r is not a subclass of one of the types %(subclassList)s",
+        'inType': "%(object)r must be one of the types %(typeList)s",
+        'type': "%(object)r must be of the type %(type)s",
+        }
+
+    def __init__(self, *args, **kw):
+        FancyValidator.__init__(self, *args, **kw)
+        if self.subclass:
+            if isinstance(self.subclass, list):
+                self.subclass = tuple(self.subclass)
+            elif not isinstance(self.subclass, tuple):
+                self.subclass = (self.subclass,)
+            self.validate_python = self.confirm_subclass
+        if self.type:
+            if isinstance(self.type, list):
+                self.type = tuple(self.type)
+            elif not isinstance(self.subclass, tuple):
+                self.type = (self.type,)
+            self.validate_python = self.confirm_type
+
+    def confirm_subclass(self, value, state):
+        if not isinstance(value, self.subclass):
+            if len(self.subclass) == 1:
+                msg = self.message('subclass', state, object=value,
+                                   subclass=self.subclass[0])
+            else:
+                msg = self.message('inSubclass', state, object=value,
+                                   subclassList=', '.join(map(str, self.subclass)))
+            raise Invalid(msg, value, state)
+
+    def confirm_type(self, value, state):
+        for t in self.type:
+            if type(value) is t:
+                break
+        else:
+            if len(self.type) == 1:
+                msg = self.message('type', state, object=value,
+                                   type=self.type[0])
+            else:
+                msg = self.message('inType', state, object=value,
+                                   typeList=', '.join(map(str, self.type)))
+            raise Invalid(msg, value, state)
+        return value
+
+class Wrapper(FancyValidator):
+
+    """
+    Used to convert functions to validator/converters.  You can give a
+    simple function for `to_python`, `from_python`, `validate_python` or
+    `validate_other`.  If that function raises an exception, the value
+    is considered invalid.  Whatever value the function returns is
+    considered the converted value.
+
+    Unlike validators, the `state` argument is not used.  Functions
+    like `int` can be used here, that take a single argument.
+
+    Examples::
+
+        >>> def downcase(v):
+        ...     return v.lower()
+        >>> wrap = Wrapper(to_python=downcase)
+        >>> to_python(wrap, 'This')
+        'this'
+        >>> from_python(wrap, 'This')
+        'This'
+        >>> wrap2 = Wrapper(from_python=downcase)
+        >>> from_python(wrap2, 'This')
+        'this'
+        >>> from_python(wrap2, 1)
+        Traceback (most recent call last):
+          ...
+        Invalid: 'int' object has no attribute 'lower'
+        >>> wrap3 = Wrapper(validate_python=int)
+        >>> to_python(wrap3, '1')
+        '1'
+        >>> to_python(wrap3, 'a')
+        Traceback (most recent call last):
+          ...
+        Invalid: invalid literal for int(): a
+    """
+
+    func_to_python = None
+    func_from_python = None
+    func_validate_python = None
+    func_validate_other = None
+
+    def __init__(self, *args, **kw):
+        for n in ['to_python', 'from_python', 'validate_python',
+                  'validate_other']:
+            if kw.has_key(n):
+                kw['func_%s' % n] = kw[n]
+                del kw[n]
+        FancyValidator.__init__(self, *args, **kw)
+        self._to_python = self.wrap(self.func_to_python)
+        self._from_python = self.wrap(self.func_from_python)
+        self.validate_python = self.wrap(self.func_validate_python)
+        self.validate_other = self.wrap(self.func_validate_other)
+
+    def wrap(self, func):
+        if not func: return None
+        def result(value, state, func=func):
+            try:
+                return func(value)
+            except Exception, e:
+                raise Invalid(str(e), {}, value, state)
+        return result
+ 
+class Constant(FancyValidator):
+
+    """
+    This converter converts everything to the same thing.  I.e., you
+    pass in the constant value when initializing, then all values get
+    converted to that constant value.
+
+    This is only really useful for funny situations, like:
+      fromEmailValidator = ValidateAny(
+                               ValidEmailAddress(),
+                               Constant('unknown@localhost'))
+    In this case, the if the email is not valid 'unknown@localhost' will
+    be used instead.  Of course, you could use if_invalid instead.
+
+    Examples::
+
+        >>> to_python(Constant('X'), 'y')
+        'X'
+    """
+
+    __unpackargs__ = ('value',)
+
+    def _to_python(self, value, state):
+        return self.value
+
+    _from_python = _to_python
+
+############################################################
+## Normal validators
+############################################################
+
+class MaxLength(FancyValidator):
+
+    """
+    Invalid if the value is longer than `maxLength`.  Uses len(),
+    so it can work for strings, lists, or anything with length.
+
+    Examples::
+
+        >>> max5 = MaxLength(5)
+        >>> to_python(max5, '12345')
+        '12345'
+        >>> from_python(max5, '12345')
+        '12345'
+        >>> to_python(max5, '123456')
+        Traceback (most recent call last):
+          ...
+        Invalid: Enter a value less than 5 characters long
+        >>> from_python(max5, '123456')
+        Traceback (most recent call last):
+          ...
+        Invalid: Enter a value less than 5 characters long
+        >>> to_python(max5, [1, 2, 3])
+        [1, 2, 3]
+        >>> to_python(max5, [1, 2, 3, 4, 5, 6])
+        Traceback (most recent call last):
+          ...
+        Invalid: Enter a value less than 5 characters long
+        >>> to_python(max5, 5)
+        Traceback (most recent call last):
+          ...
+        Invalid: Invalid value (value with length expected)
+    """
+
+    __unpackargs__ = ('maxLength',)
+    messages = {
+        'tooLong': "Enter a value less than %(maxLength)i characters long",
+        'invalid': "Invalid value (value with length expected)",
+        }
+
+    def validate_python(self, value, state):
+        try:
+            if value and \
+               len(value) > self.maxLength:
+                raise Invalid(self.message('tooLong', state,
+                                           maxLength=self.maxLength),
+                              value, state)
+            else:
+                return None
+        except TypeError:
+            raise Invalid(self.message('invalid', state),
+                          value, state)
+
+class MinLength(FancyValidator):
+
+    """
+    Invalid if the value is shorter than `minlength`.  Uses len(),
+    so it can work for strings, lists, or anything with length.
+
+    Examples::
+
+        >>> min5 = MinLength(5)
+        >>> to_python(min5, '12345')
+        '12345'
+        >>> from_python(min5, '12345')
+        '12345'
+        >>> to_python(min5, '1234')
+        Traceback (most recent call last):
+          ...
+        Invalid: Enter a value more than 5 characters long
+        >>> from_python(min5, '1234')
+        Traceback (most recent call last):
+          ...
+        Invalid: Enter a value more than 5 characters long
+        >>> to_python(min5, [1, 2, 3, 4, 5])
+        [1, 2, 3, 4, 5]
+        >>> to_python(min5, [1, 2, 3])
+        Traceback (most recent call last):
+          ...
+        Invalid: Enter a value more than 5 characters long
+        >>> to_python(min5, 5)
+        Traceback (most recent call last):
+          ...
+        Invalid: Invalid value (value with length expected)
+        
+    """
+
+    __unpackargs__ = ('minLength',)
+
+    messages = {
+        'tooShort': "Enter a value more than %(minLength)i characters long",
+        'invalid': "Invalid value (value with length expected)",
+        }
+
+    def validate_python(self, value, state):
+        try:
+            if len(value) < self.minLength:
+                raise Invalid(self.message('tooShort', state,
+                                           minLength=self.minLength),
+                              value, state)
+        except TypeError:
+            raise Invalid(self.message('invalid', state),
+                          value, state)
+
+class NotEmpty(FancyValidator):
+
+    """
+    Invalid if value is empty (empty string, empty list, etc).  Generally
+    for objects that Python considers false, except zero which is not
+    considered invalid.
+
+    Examples::
+
+        >>> ne = NotEmpty(messages={'empty': 'enter something'})
+        >>> to_python(ne, '')
+        Traceback (most recent call last):
+          ...
+        Invalid: enter something
+        >>> to_python(ne, 0)
+        0
+    """
+
+    messages = {
+        'empty': "Please enter a value",
+        }
+
+    def validate_python(self, value, state):
+        if value == 0:
+            # This isn't "empty" for this definition.
+            return value
+        if not value:
+            raise Invalid(self.message('empty', state),
+                          value, state)
+
+class Empty(FancyValidator):
+
+    """
+    Invalid unless the value is empty.  Use cleverly, if at all.
+
+    Examples::
+
+        >>> to_python(Empty, 0)
+        Traceback (most recent call last):
+          ...
+        Invalid: You cannot enter a value here
+    """
+
+    messages = {
+        'notEmpty': "You cannot enter a value here",
+        }
+
+    def validate_python(self, value, state):
+        if value or value == 0:
+            raise Invalid(self.message('notEmpty', state),
+                          value, state)
+
+class Regex(FancyValidator):
+
+    """
+    Invalid if the value doesn't match the regular expression `regex`.
+    The regular expression can be a compiled re object, or a string
+    which will be compiled for you.
+
+    Use strip=True if you want to strip the value before validation,
+    and as a form of conversion (often useful).
+
+    Examples::
+
+        >>> cap = Regex(r'^[A-Z]+$')
+        >>> to_python(cap, 'ABC')
+        'ABC'
+        >>> from_python(cap, 'abc')
+        Traceback (most recent call last):
+          ...
+        Invalid: The input is not valid
+        >>> to_python(cap, 1)
+        Traceback (most recent call last):
+          ...
+        Invalid: The input must be a string (not a &lt;type 'int'&gt;)
+        >>> to_python(Regex(r'^[A-Z]+$', strip=True), '  ABC  ')
+        'ABC'
+        >>> to_python(Regex(r'this', regexOps=('I',)), 'THIS')
+        'THIS'
+    """
+
+    regexOps = ()
+    strip = False
+    regex = None
+
+    __unpackargs__ = ('regex',)
+
+    messages = {
+        'invalid': "The input is not valid",
+        }
+    
+    def __init__(self, *args, **kw):
+        FancyValidator.__init__(self, *args, **kw)
+        if isinstance(self.regex, str):
+            ops = 0
+            assert not isinstance(self.regexOps, str), "regexOps should be a list of options from the re module (names, or actual values)"
+            for op in self.regexOps:
+                if isinstance(op, str):
+                    ops |= getattr(re, op)
+                else:
+                    ops |= op
+            self.regex = re.compile(self.regex, ops)
+
+    def validate_python(self, value, state):
+        self.assert_string(value, state)
+        if self.strip and (isinstance(value, str) or isinstance(value, unicode)):
+            value = value.strip()
+        if not self.regex.search(value):
+            raise Invalid(self.message('invalid', state),
+                          value, state)
+
+    def _to_python(self, value, state):
+        if self.strip and \
+               (isinstance(value, str) or isinstance(value, unicode)):
+            return value.strip()
+        return value
+
+class PlainText(Regex):
+
+    """
+    Test that the field contains only letters, numbers, underscore,
+    and the hyphen.  Subclasses Regex.
+
+    Examples::
+
+        >>> to_python(PlainText, '_this9_')
+        '_this9_'
+        >>> from_python(PlainText, '  this  ')
+        Traceback (most recent call last):
+          ...
+        Invalid: Enter only letters, numbers, or _ (underscore)
+        >>> to_python(PlainText(strip=True), '  this  ')
+        'this'
+        >>> from_python(PlainText(strip=True), '  this  ')
+        '  this  '
+    """
+
+    regex = r"^[a-zA-Z_\-0-9]*$"
+
+    messages = {
+        'invalid': 'Enter only letters, numbers, or _ (underscore)',
+        }
+
+class OneOf(FancyValidator):
+
+    """
+    Tests that the value is one of the members of a given list.  If
+    testValueLists=True, then if the input value is a list or tuple,
+    all the members of the sequence will be checked (i.e., the input
+    must be a subset of the allowed values).
+
+    Use hideList=True to keep the list of valid values out of the
+    error message in exceptions.
+
+    Examples::
+
+        >>> oneof = OneOf([1, 2, 3])
+        >>> to_python(oneof, 1)
+        1
+        >>> to_python(oneof, 4)
+        Traceback (most recent call last):
+          ...
+        Invalid: Value must be one of: 1; 2; 3
+        >>> to_python(oneof(testValueList=True), [2, 3, [1, 2, 3]])
+        [2, 3, [1, 2, 3]]
+        >>> to_python(oneof, [2, 3, [1, 2, 3]])
+        Traceback (most recent call last):
+          ...
+        Invalid: Value must be one of: 1; 2; 3
+    """
+
+    list = None
+    testValueList = False
+    hideList = False
+
+    __unpackargs__ = ('list',)
+
+    messages = {
+        'invalid': "Invalid value",
+        'notIn': "Value must be one of: %(items)s",
+        }
+    
+    def validate_python(self, value, state):
+        if self.testValueList and isinstance(value, (list, tuple)):
+            for v in value:
+                self.validate_python(v, state)
+        else:
+            if not value in self.list:
+                if self.hideList:
+                    raise Invalid(self.message('invalid', state),
+                                  value, state)
+                else:
+                    raise Invalid(self.message('notIn', state,
+                                               items='; '.join(map(str, self.list))),
+                                  value, state)
+
+class DictConverter(FancyValidator):
+
+    """
+    Converts values based on a dictionary which has values as keys for
+    the resultant values.  If allowNull is passed, it will not balk if
+    a false value (e.g., '' or None) is given (it will return None in
+    these cases).
+
+    to_python takes keys and gives values, from_python takes values and
+    gives keys.
+
+    If you give hideDict=True, then the contents of the dictionary
+    will not show up in error messages.
+
+    Examples::
+
+        >>> dc = DictConverter({1: 'one', 2: 'two'})
+        >>> to_python(dc, 1)
+        'one'
+        >>> from_python(dc, 'one')
+        1
+        >>> to_python(dc, 3)
+        Traceback:
+        Invalid: Enter a value from: 1; 2
+        >>> to_python(dc(hideDict=True), 3)
+        Traceback:
+        Invalid: Choose something
+        >>> from_python(dc, 'three')
+        Traceback:
+        Invalid: Nothing in my dictionary goes by the value 'three'.  Choose one of: 'one'; 'two'
+    """
+
+    dict = None
+    hideDict = False
+
+    __unpackargs__ = ('dict',)
+
+    messages = {
+        'keyNotFound': "Choose something",
+        'chooseKey': "Enter a value from: %(items)s",
+        'valueNotFound': "That value is not known",
+        'chooseValue': "Nothing in my dictionary goes by the value %(value)s.  Choose one of: %(items)s",
+        }
+    
+    def _to_python(self, value, state):
+        try:
+            return self.dict[value]
+        except KeyError:
+            if self.hideDict:
+                raise Invalid(self.message('keyNotFound', state),
+                              value, state)
+            else:
+                raise Invalid(self.message('chooseKey', state,
+                                           items='; '.join(map(repr, self.dict.keys()))),
+                              value, state)
+
+    def _from_python(self, value, state):
+        for k, v in self.dict.items():
+            if value == v:
+                return k
+        if self.hideDict:
+            raise Invalid(self.message('valueNotFound', state),
+                          value, state)
+        else:
+            raise Invalid(self.message('chooseValue', state,
+                                       value=repr(value),
+                                       items='; '.join(map(repr, self.dict.values()))),
+                          value, state)
+
+class IndexListConverter(FancyValidator):
+
+    """
+    Converts a index (which may be a string like '2') to the value in
+    the given list.
+
+    Examples::
+
+        >>> index = IndexListConverter(['zero', 'one', 'two'])
+        >>> to_python(index, 0)
+        'zero'
+        >>> from_python(index, 'zero')
+        0
+        >>> to_python(index, '1')
+        'one'
+        >>> to_python(index, 5)
+        Traceback:
+        Invalid: Index out of range
+        >>> to_python(index, None)
+        Traceback:
+        Invalid: Must be an integer index
+        >>> from_python(index, 'five')
+        Traceback:
+        Invalid: Item 'five' was not found in the list
+    """
+
+    list = None
+
+    __unpackargs__ = ('list',)
+
+    messages = {
+        'integer': "Must be an integer index",
+        'outOfRange': "Index out of range",
+        'notFound': "Item %(value)s was not found in the list",
+        }
+    
+    def _to_python(self, value, state):
+        try:
+            value = int(value)
+        except (ValueError, TypeError):
+            raise Invalid(self.message('integer', state),
+                          value, state)
+        try:
+            return self.list[value]
+        except IndexError:
+            raise Invalid(self.message('outOfRange', state),
+                          value, state)
+
+    def _from_python(self, value, state):
+        for i in range(len(self.list)):
+            if self.list[i] == value:
+                return i
+        raise Invalid(self.message('notFound', state,
+                                   value=repr(value)),
+                      value, state)        
+
+class DateValidator(FancyValidator):
+
+    """
+    Validates that a date is within the given range.  Be sure to call
+    DateConverter first if you aren't expecting mxDateTime input.
+    """
+    ## @@: This should work with datetime as well, and even better
+    ## handle having some datetime and some mxDateTime dates working
+    ## together.
+
+    earliestDate = None
+    latestDate = None
+
+    messages = {
+        'after': "Date must be after %(date)s",
+        'before': "Date must be before %(date)s",
+        # Double %'s, because this will be substituted twice:
+        'dateFormat': "%%A, %%d %%B %%Y",
+        }
+
+    def validate_python(self, value, state):
+        if self.earliestDate and value < self.earliestDate:
+            raise Invalid(
+                self.message('after', state,
+                             date=self.earliestDate.strftime(self.message('dateFormat', state))),
+                value, state)
+        if self.latestDate and value > self.latestDate:
+            raise Invalid(
+                self.message('before', state,
+                             date=self.latestDate.strftime(self.message('dateFormat', state))),
+                value, state)
+
+class Int(FancyValidator):
+
+    """
+    Convert a value to an integer.
+    """
+
+    messages = {
+        'integer': "Please enter an integer value",
+        }
+
+    def _to_python(self, value, state):
+        try:
+            return int(value)
+        except ValueError:
+            raise Invalid(self.message('integer', state),
+                          value, state)
+
+    _from_python = _to_python
+
+class Number(FancyValidator):
+
+    """
+    Convert a value to a float or integer.  Tries to convert it to
+    an integer if no information is lost.
+    """
+    
+    messages = {
+        'number': "Please enter a number",
+        }
+    
+    def _to_python(self, value, state):
+        try:
+            value = float(value)
+            if value == int(value):
+                return int(value)
+            return value
+        except ValueError:
+            raise Invalid(self.message('number', state),
+                          value, state)
+
+class String(FancyValidator):
+    """
+    Converts things to string, but treats empty things as the empty
+    string.  Also takes a `max` and `min` argument, and the string
+    length must fall in that range.
+    """
+
+    min = None
+    max = None
+
+    messages = {
+        'tooLong': "Enter a value less than %(max)i characters long",
+        'tooShort': "Enter a value %(min)i characters long or more",
+        }
+    
+    def validate_python(self, value, state):
+        if self.max is not None and len(value) > self.max:
+            raise Invalid(self.message('tooLong', state,
+                                       max=self.max),
+                          value, state)
+        if self.min is not None and len(value) < self.min:
+            raise Invalid(self.message('tooShort', state,
+                                       min=self.min),
+                          value, state)
+
+    def _from_python(self, value, state):
+        if value: return str(value)
+        if value == 0: return str(value)
+        return ""
+
+class Set(FancyValidator):
+
+    """
+    This is for when you think you may return multiple values for a
+    certain field.  This way the result will always be a list, even if
+    there's only one result.  It's equivalent to
+    ForEach(convertToList=True).
+    """
+
+    def _to_python(self, value, state):
+        if isinstance(value, (list, tuple)):
+            return value
+        elif value is None:
+            return []
+        else:
+            return [value]
+
+class Email(FancyValidator):
+    """Validate an email address.  If you pass resolveDomain=True,
+    then it will try to resolve the domain name to make sure it's valid.
+    This takes longer, of course.  You must have the pyDNS modules
+    installed <http://pydns.sf.net> to look up MX records.
+    """
+
+    resolveDomain=False
+
+    usernameRE = re.compile(r"^[a-z0-9\_\-']+", re.I)
+    domainRE = re.compile(r"^[a-z0-9\.\-]+\.[a-z]+$", re.I)
+
+    messages = {
+        'empty': 'Please enter an email address',
+        'noAt': 'An email address must contain a single @',
+        'badUsername': 'The username portion of the email address is invalid (the portion before the @: %(username)s)',
+        'badDomain': 'The domain portion of the email address is invalid (the portion after the @: %(domain)s)',
+        'domainDoesNotExist': 'The domain of the email address does not exist (the portion after the @: %(domain)s)',
+        }
+    
+    def __init__(self, *args, **kw):
+        global mxlookup
+        FancyValidator.__init__(self, *args, **kw)
+        if self.resolveDomain:
+            if mxlookup is None:
+                try:
+                    from DNS.lazy import mxlookup
+                except ImportError:
+                    import warnings
+                    warnings.warn("pyDNS <http://pydns.sf.net> is not installed on your system (or the DNS package cannot be found).  I cannot resolve domain names in addresses")
+                    raise
+
+    def validate_python(self, value, state):
+        if not value:
+            raise Invalid(
+                self.message('empty', state),
+                value, state)
+        value = value.strip()
+        splitted = value.split('@', 1)
+        if not len(splitted) == 2:
+            raise Invalid(
+                self.message('noAt', state),
+                value, state)
+        if not self.usernameRE.search(splitted[0]):
+            raise Invalid(
+                self.message('badUsername', state,
+                             username=splitted[0]),
+                value, state)
+        if not self.domainRE.search(splitted[1]):
+            raise Invalid(
+                self.message('badDomain', state,
+                             domain=splitted[1]),
+                value, state)
+        if self.resolveDomain:
+            domains = mxlookup(splitted[1])
+            if not domains:
+                raise Invalid(
+                    self.message('domainDoesNotExist', state,
+                                 domain=splitted[1]),
+                    value, state)
+
+    def _to_python(self, value, state):
+        return value.strip()
+
+class StateProvince(FancyValidator):
+    
+    """
+    Valid state or province code (two-letter).  Well, for now I don't
+    know the province codes, but it does state codes.  Give your own
+    `states` list to validate other state-like codes; give
+    `extraStates` to add values without losing the current state
+    values.
+    """
+
+    states = ['AK', 'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE',
+               'FL', 'GA', 'HI', 'IA', 'ID', 'IN', 'IL', 'KS', 'KY',
+               'LA', 'MA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MS', 'MT',
+               'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV', 'NY', 'OH',
+               'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT',
+               'VA', 'VT', 'WA', 'WI', 'WV', 'WY']
+
+    extraStates = []
+
+    __unpackargs__ = ('extraStates',)
+
+    messages = {
+        'empty': 'Please enter a state code',
+        'wrongLength': 'Please enter a state code with TWO letters',
+        'invalid': 'That is not a valid state code',
+        }
+
+    def validate_python(self, value, state):
+        value = str(value).strip().upper()
+        if not value:
+            raise Invalid(
+                self.message('empty', state),
+                value, state)
+        if len(value) != 2:
+            raise Invalid(
+                self.message('wrongLength', state),
+                value, state)
+        if value not in self.states \
+           and not (self.extraStates and value in self.extraStates):
+            raise Invalid(
+                self.message('invalid', state),
+                value, state)
+    
+    def _to_python(self, value, state):
+        return str(value).strip().upper()
+
+class PhoneNumber(FancyValidator):
+
+    """
+    Validates, and converts to ###-###-####, optionally with
+    extension (as ext.##...)
+    @@: should add internation phone number support
+    """
+
+    _phoneRE = re.compile(r'^\s*(?:1-)?(\d\d\d)[\- \.]?(\d\d\d)[\- \.]?(\d\d\d\d)(?:\s*ext\.?\s*(\d+))?\s*$', re.I)
+
+    messages = {
+        'phoneFormat': 'Please enter a number, with area code, in the form ###-###-####, optionally with &quot;ext.####&quot;',
+        }
+        
+    def _to_python(self, value, state):
+        self.assert_string(value, state)
+        match = self._phoneRE.search(value)
+        if not match:
+            raise Invalid(
+                self.message('phoneFormat', state),
+                value, state)
+        return value
+
+    def _from_python(self, value, state):
+        self.assert_string(value, state)
+        match = self._phoneRE.search(value)
+        if not match:
+            raise Invalid(self.message('phoneFormat', state),
+                          value, state)
+        result = '%s-%s-%s' % (match.group(1), match.group(2), match.group(3))
+        if match.group(4):
+            result = result + " ext.%s" % match.group(4)
+        return result
+
+class DateConverter(FancyValidator):
+
+    """
+    Validates and converts a textual date, like mm/yy, dd/mm/yy,
+    dd-mm-yy, etc Always assumes month comes second value is the
+    month.  Accepts English month names, also abbreviated.  Returns
+    value as mx.DateTime object.  Two year dates are assumed to be
+    within 1950-2020, with dates from 21-49 being ambiguous and
+    signaling an error.
+
+    Use accept_day=False if you just want a month/year (like for a
+    credit card expiration date).
+    """
+    ## @@: accepts only US-style dates
+
+    accept_day = True
+
+    _day_date_re = re.compile(r'^\s*(\d\d?)[\-\./\\](\d\d?|jan|january|feb|febuary|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[\-\./\\](\d\d\d?\d?)\s*$', re.I)
+    _month_date_re = re.compile(r'^\s*(\d\d?|jan|january|feb|febuary|mar|march|apr|april|may|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|november|dec|december)[\-\./\\](\d\d\d?\d?)\s*$', re.I)
+
+    _month_names = {
+        'jan': 1, 'january': 1,
+        'feb': 2, 'febuary': 2,
+        'mar': 3, 'march': 3,
+        'apr': 4, 'april': 4,
+        'may': 5,
+        'jun': 6, 'june': 6,
+        'jul': 7, 'july': 7,
+        'aug': 8, 'august': 8,
+        'sep': 9, 'sept': 9, 'september': 9,
+        'oct': 10, 'october': 10,
+        'nov': 11, 'november': 11,
+        'dec': 12, 'december': 12,
+        }
+
+    ## @@: Feb. should be leap-year aware (but mxDateTime does catch that)
+    _monthDays = {
+        1: 31, 2: 29, 3: 31, 4: 30, 5: 31, 6: 30, 7: 31, 8: 31,
+        9: 30, 10: 31, 11: 30, 12: 31}
+
+    messages = {
+        'badFormat': 'Please enter the date in the form dd/mm/yyyy',
+        'monthRange': 'Please enter a month from 1 to 12',
+        'invalidDay': 'Please enter a valid day',
+        'dayRange': 'That month only has %(days)i days',
+        'invalidDate': 'That is not a valid day (%(exception)s)',
+        'unknownMonthName': "Unknown month name: %(month)s",
+        'invalidYear': 'Please enter a number for the year',
+        'fourDigitYear': 'Please enter a four-digit year',
+        'wrongFormat': 'Please enter the date in the form mm/yyyy',
+        }
+
+    def __init__(self, *args, **kw):
+        global DateTime
+        FancyValidator.__init__(self, *args, **kw)
+        if DateTime is None:
+            try:
+                from mx import DateTime
+            except ImportError:
+                import DateTime
+        assert DateTime, "You must have mxDateTime installed to use DateConverter"
+        FancyValidator.__init__(self)
+
+    def _to_python(self, value, state):
+        if self.accept_day: return self.convert_day(value, state)
+        else: return self.convert_month(value)
+
+    def convert_day(self, value, state):
+        match = self._day_date_re.search(value)
+        if not match:
+            raise Invalid(self.message('badFormat', state),
+                          value, state)
+        day = int(match.group(1))
+        month = self.make_month(match.group(2))
+        year = self.makeYear(match.group(3))
+        if month > 12 or month < 1:
+            raise Invalid(self.message('monthRange', state),
+                          value, state)
+        if day < 1:
+            raise Invalid(self.message('invalidDay', state),
+                          value, state)
+        if self._monthDays[month] < day:
+            raise Invalid(self.message('dayRange', state,
+                                       days=self._monthDays[month]),
+                          value, state)
+        try:
+            return DateTime.DateTime(year, month, day)
+        except DateTime.RangeError, v:
+            raise Invalid(self.message('invalidDate', state,
+                                       exception=str(v)),
+                          value, state)
+        
+    def make_month(self, value):
+        try:
+            return int(value)
+        except ValueError:
+            value = value.lower().strip()
+            if self._month_names.has_key(value):
+                return self._month_names[value]
+            else:
+                raise Invalid(self.message('unknownMonthName', state,
+                                           month=value),
+                              value, state)
+
+    def makeYear(self, year):
+        try:
+            year = int(year)
+        except ValueError:
+            raise Invalid(self.message('invalidYear', state),
+                          value, state)
+        if year <= 20:
+            year = year + 2000
+        if year >= 50 and year < 100:
+            year = year + 1900
+        if year > 20 and year < 50:
+            raise Invalid(self.message('fourDigitYear', state),
+                          value, state)
+        return year
+
+    def convert_month(self, value, state):
+        match = self._month_date_re.search(value)
+        if not match:
+            raise Invalid(self.message('wrongFormat', state),
+                          value, state)
+        month = self.make_month(match.group(1))
+        year = self.makeYear(match.group(2))
+        if month > 12 or month < 1:
+            raise Invalid(self.message('monthRange', state),
+                          value, state)
+        return DateTime.DateTime(year, month)
+
+    def _from_python(self, value, state):
+        if self.accept_day: return self.unconvert_day(value, state)
+        else: return self.unconvert_month(value, state)
+
+    def unconvert_day(self, value, state):
+        # @@ ib: double-check, improve
+        return value.strftime("%m/%d/%Y")
+        
+    def unconvert_month(self, value, state):
+        # @@ ib: double-check, improve
+        return value.strftime("%m/%Y")
+
+class PostalCode(Regex):
+
+    """
+    US Postal codes (aka Zip Codes).
+    """
+
+    regex = r'^\d\d\d\d\d(?:-\d\d\d\d)?$'
+    strip = True
+
+    messages = {
+        'invalid': 'Please enter a zip code (5 digits)',
+        }
+
+class StripField(FancyValidator):
+
+    """
+    Take a field from a dictionary, removing the key from the
+    dictionary.  ``name`` is the key.  The field value and a new copy
+    of the dictionary with that field removed are returned.
+    """
+
+    __unpackargs__ = ('name',)
+
+    messages = {
+        'missing': 'The name %(name)s is missing',
+        }
+
+    def _to_python(self, valueDict, state):
+        v = valueDict.copy()
+        try:
+            field = v[self.name]
+            del v[self.name]
+        except KeyError:
+            raise Invalid(self.message('missing', state,
+                                       name=repr(self.name)),
+                          valueDict, state)
+        return field, v
+
+class FormValidator(FancyValidator):
+    """
+    A FormValidator is something that can be chained with a
+    Schema.  Unlike normal chaining the FormValidator can 
+    validate forms that aren't entirely valid.
+
+    The important method is .validate(), of course.  It gets passed a
+    dictionary of the (processed) values from the form.  If you have
+    .validate_partial_form set to True, then it will get the incomplete
+    values as well -- use .has_key() to test if the field was able to
+    process any particular field.
+
+    Anyway, .validate() should return a string or a dictionary.  If a
+    string, it's an error message that applies to the whole form.  If
+    not, then it should be a dictionary of fieldName: errorMessage.
+    The special key "form" is the error message for the form as a whole
+    (i.e., a string is equivalent to {"form": string}).
+
+    Return None on no errors.
+    """
+
+    validate_partial_form = False
+
+    validate_partial_python = None
+    validate_partial_other = None
+
+class FieldsMatch(FormValidator):
+
+    """
+    Tests that the given fields match, i.e., are identical.  Useful
+    for password+confirmation fields.  Pass the list of field names in
+    as `field_names`.
+    """
+
+    show_match = False
+    field_names = None
+    validate_partial_form = True
+    __unpackargs__ = ('*', 'field_names')
+
+    messages = {
+        'invalid': "Fields do not match (should be %(match)s)",
+        'invalidNoMatch': "Fields do not match",
+        }
+    
+    def validate_partial(self, field_dict, state):
+        for name in self.field_names:
+            if not dict.has_key(name):
+                return
+        self.validate(field_dict)
+
+    def validate_python(self, field_dict, state):
+        print "Checking:", self.field_names, field_dict
+        ref = field_dict[self.field_names[0]]
+        errors = {}
+        for name in self.field_names[1:]:
+            if field_dict.get(name, '') != ref:
+                if self.show_match:
+                    errors[name] = self.message('invalid', state,
+                                                match=ref)
+                else:
+                    errors[name] = self.message('invalidNoMatch', state)
+        if errors:
+            error_list = errors.items()
+            error_list.sort()
+            raise Invalid('<br>\n'.join(['%s: %s' % (name, value) for name, value in error_list]),
+                          {}, field_dict, state,
+                          error_dict=errors)
+
+class CreditCardValidator(FormValidator):
+    """
+    Checks that credit card numbers are valid (if not real).
+
+    You pass in the name of the field that has the credit card
+    type and the field with the credit card number.  The credit
+    card type should be one of "visa", "mastercard", "amex",
+    "dinersclub", "discover", "jcb".
+
+    You must check the expiration date yourself (there is no
+    relation between CC number/types and expiration dates).
+    """
+
+    validate_partial_form = True
+
+    cc_type_field = 'ccType'
+    cc_number_field = 'ccNumber'
+    __unpackargs__ = ('cc_type_field', 'cc_number_field')
+
+    messages = {
+        'invalidNumber': "Please enter only the number, no other characters",
+        'badLength': "You did not enter a valid number of digits",
+        'invalidNumber': "That number is not valid",
+        }
+
+    def validate_partial(self, field_dict, state):
+        if not field_dict.get(self._cc_type_field, None) \
+           or not field_dict.get(self._cc_number_field, None):
+            return None
+        self.validate(field_dict, state)
+
+    def validate(self, field_dict, state):
+        errors = self._validateReturn(field_dict, state)
+        if errors:
+            error_list = errors.items()
+            error_list.sort()
+            raise Invalid(
+                '<br>\n'.join(["%s: %s" % (name, value)
+                               for name, value in error_list]),
+                {}, 
+                field_dict, state, error_dict=errors)
+        
+    def _validateReturn(self, field_dict, state):
+        ccType = field_dict[self._cc_type_field].lower().strip()
+        number = field_dict[self._cc_number_field].strip()
+        number = number.replace(' ', '')
+        number = number.replace('-', '')
+        try:
+            long(number)
+        except ValueError:
+            return {self._cc_number_field: self.message('invalidNumber', state)}
+
+        assert _cardInfo.has_key(ccType), "I can't validate that type of credit card"
+        foundValid = False
+        validLength = False
+        for prefix, length in self._cardInfo[ccType]:
+            if len(number) == length:
+                validLength = True
+            if len(number) == length \
+               and number[:len(prefix)] != prefix:
+                foundValid = True
+                break
+        if not validLength:
+            return {self._cc_number_field: self.message('badLength', state)}
+        if not foundValid:
+            return {self._cc_number_field: self.message('invalidNumber', state)}
+
+        if not _validateMod10(number):
+            return {self._cc_number_field: self.message('invalidNumber', state)}
+        return None
+
+    def _validateMod10(self, s):
+        """
+        This code by Sean Reifschneider, of tummy.com
+        """
+        double = 0
+        sum = 0
+        for i in range(len(s) - 1, -1, -1):
+            for c in str((double + 1) * int(s[i])): sum = sum + int(c)
+            double = (double + 1) % 2
+        return((sum % 10) == 0)
+
+    _cardInfo = {
+        "visa": [('4', 16),
+                 ('4', 13)],
+        "mastercard": [('51', 16),
+                       ('52', 16),
+                       ('53', 16),
+                       ('54', 16),
+                       ('55', 16)],
+        "discover": [('6011', 16)],
+        "amex": [('34', 15),
+                 ('37', 15)],
+        "dinersclub": [('300', 14),
+                       ('301', 14),
+                       ('302', 14),
+                       ('303', 14),
+                       ('304', 14),
+                       ('305', 14),
+                       ('36', 14),
+                       ('38', 14)],
+        "jcb": [('3', 16),
+                ('2131', 15),
+                ('1800', 15)],
+            }
+
