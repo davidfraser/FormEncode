@@ -183,6 +183,8 @@ class Schema(FancyValidator):
                     except Invalid, e:
                         errors[name] = e
 
+            del __traceback_info__
+
             for name in unused:
                 validator = adapt_validator(self.fields[name], state)
                 try:
