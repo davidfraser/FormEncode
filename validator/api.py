@@ -112,7 +112,10 @@ class Invalid(Exception):
         elif self.error_dict:
             result = {}
             for name, item in self.error_dict.items():
-                result[name] = item.unpack_errors()
+                if isinstance(item, (str, unicode)):
+                    result[name] = item
+                else:
+                    result[name] = item.unpack_errors()
             return result
         else:
             return self.msg
