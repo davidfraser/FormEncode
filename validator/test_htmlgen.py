@@ -54,6 +54,11 @@ def test_none():
     assert html.str(None) == ''
     assert str(html.b(class_=None)('hey')) == '<b>hey</b>'
     assert str(html.b(class_=' ')(None)) == '<b class=" " />'
+
+def test_namespace():
+    output = '<b tal:content="options/whatever" />'
+    assert str(html.b(**{'tal:content': 'options/whatever'})) == output
+    assert str(html.b(tal__content='options/whatever')) == output
     
 if __name__ == '__main__':
     # It's like a super-mini py.test...

@@ -67,6 +67,10 @@ class _HTML:
         if attr.startswith('_'):
             raise AttributeError
         attr = attr.lower()
+        if attr.endswith('_'):
+            attr = attr[:-1]
+        if attr.find('__') != -1:
+            attr = attr.replace('__', ':')
         if attr == 'comment':
             return Element(et.Comment, {})
         else:
@@ -107,12 +111,19 @@ class Element(et._ElementInterface):
                     "'c' keyword argument, but not both")
             args = kw['c']
             del kw['c']
+            if not isinstance(args, (list, tuple)):
+                args = (args,)
         for name, value in kw.items():
             if value is None:
                 del kw[name]
                 continue
+            kw[name] = unicode(value)
             if name.endswith('_'):
                 kw[name[:-1]] = value
+                del kw[name]
+            if name.find('__') != -1:
+                new_name = name.replace('__', ':')
+                kw[new_name] = value
                 del kw[name]
         el.attrib.update(kw)
         el.text = self.text
