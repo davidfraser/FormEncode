@@ -1,4 +1,5 @@
 from htmlgen import html
+import doctest
 
 # A test value that can't be encoded as ascii:
 uni_value = u'\xff'
@@ -9,6 +10,8 @@ def test_basic():
     assert str(html.a('hey there')(href='test')) == output
     assert str(html.a(href='test', c='hey there')) == output
     assert str(html.a('hey there', href='test')) == output
+    assert str(html.a(href='test')('hey ', 'there')) == output
+    assert str(html.a(href='test')(['hey ', 'there'])) == output
 
 def test_compound():
     output = '<b>Hey <i>you</i>!</b>'
@@ -40,6 +43,17 @@ def test_quote():
     assert html.quote(None) == ''
     assert html.str(None) == ''
     assert str(html.b('<hey>')) == '<b>&lt;hey&gt;</b>'
+
+def test_comment():
+    assert str(html.comment('test')) == '<!-- test -->'
+    assert (str(html.comment(uni_value))
+            == '<!-- %s -->' % uni_value.encode('utf-8'))
+    assert str(html.comment('test')('this')) == '<!-- testthis -->'
+
+def test_none():
+    assert html.str(None) == ''
+    assert str(html.b(class_=None)('hey')) == '<b>hey</b>'
+    assert str(html.b(class_=' ')(None)) == '<b class=" " />'
     
 if __name__ == '__main__':
     # It's like a super-mini py.test...
@@ -47,3 +61,6 @@ if __name__ == '__main__':
         if name.startswith('test'):
             print name
             value()
+    import htmlgen
+    doctest.testmod(htmlgen)
+    print 'doctest'
