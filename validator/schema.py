@@ -150,7 +150,12 @@ class Schema(FancyValidator):
                 state.full_dict = previous_full_dict
 
     def _from_python(self, value_dict, state):
-        for validator in self.chained_validators:
+        chained = self.chained_validators[:]
+        chained.reverse()
+        finished = []
+        for validator in chained:
+            __traceback_info__ = 'for_python chained_validator %s (finished %s)' % (validator, ', '.join(map(repr, finished)) or 'none')
+            finished.append(validator)
             value_dict = from_python(validator, value_dict, state)
         new = {}
         errors = {}
@@ -161,6 +166,7 @@ class Schema(FancyValidator):
             state.full_dict = value_dict
         try:
             for name, value in value_dict.items():
+                __traceback_info__ = 'for_python in %s' % name
                 try:
                     unused.remove(name)
                 except ValueError:
@@ -169,15 +175,13 @@ class Schema(FancyValidator):
                             self.message('notExpected', state,
                                          name=repr(name)),
                             value_dict, state)
-                else:
                     new[name] = value
-                    continue
-                validator = adapt_validator(self.fields[name], state)
-
-                try:
-                    new[name] = validator.from_python(value, state)
-                except Invalid, e:
-                    errors[name] = e
+                else:
+                    try:
+                        new[name] = from_python(self.fields[name],
+                                                value, state)
+                    except Invalid, e:
+                        errors[name] = e
 
             for name in unused:
                 validator = adapt_validator(self.fields[name], state)
@@ -191,8 +195,11 @@ class Schema(FancyValidator):
                     format_compound_error(errors),
                     value_dict, state,
                     error_dict=errors)
-            
-            for validaor in self.pre_validators:
+
+            pre = self.pre_validators[:]
+            pre.reverse()
+            for validator in pre:
+                __traceback_info__ = 'for_python pre_validator %s' % validator
                 new = from_python(validator, new, state)
 
             return new
