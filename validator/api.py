@@ -97,6 +97,27 @@ class Invalid(Exception):
         #    val += " (value: %s)" % repr(self.value)
         return val    
 
+    def unpack_errors(self):
+        """
+        Returns the error as a simple data structure -- lists,
+        dictionaries, and strings.
+        """
+        if self.error_list:
+            result = []
+            for item in self.error_list:
+                if not item:
+                    result.append(item)
+                else:
+                    result.append(item.unpack_errors())
+            return result
+        elif self.error_dict:
+            result = {}
+            for name, item in self.error_dict.items():
+                result[name] = item.unpack_errors()
+            return result
+        else:
+            return self.msg
+
 
 ############################################################
 ## Base Classes
