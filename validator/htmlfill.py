@@ -151,7 +151,7 @@ class FillingParser(HTMLParser.HTMLParser):
         t = (self.get_attr(attrs, 'type') or 'text').lower()
         name = self.get_attr(attrs, 'name')
         value = self.defaults.get(name)
-        if t == 'text':
+        if t == 'text' or t == 'hidden':
             self.set_attr(attrs, 'value', value or '')
             self.write_tag('input', attrs)
             self.skip_next = True
