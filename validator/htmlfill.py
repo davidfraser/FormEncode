@@ -138,11 +138,11 @@ class FillingParser(HTMLParser.HTMLParser):
     def handle_error(self, attrs):
         name = self.get_attr(attrs, 'name')
         formatter = self.get_attr(attrs, 'format') or 'default'
-        if not name:
+        if name is None:
             name = self.in_error
-        assert name, (
+        assert name is not None, (
             "Name attribute in <error> required if not contained in "
-            "<iferror> (%s)" % self.getpos())
+            "<iferror> (%i:%i)" % self.getpos())
         error = self.errors.get(name, '')
         if error:
             error = self.error_formatters[formatter](error)
@@ -217,6 +217,7 @@ class FillingParser(HTMLParser.HTMLParser):
             and self.errors.get(self.get_attr(attrs, 'name'))):
             self.add_class(attrs, self.error_class)
         self.in_select = self.get_attr(attrs, 'name')
+        self.add_key(self.in_select)
 
     def handle_end_select(self):
         self.in_select = None
