@@ -1,5 +1,5 @@
-import validators
 from interfaces import *
+from api import *
 import declarative
 import protocols
 
@@ -18,7 +18,7 @@ class SchemaMeta(declarative.DeclarativeMeta):
         # Don't bother doing anything if this is the most parent
         # Schema class (which is the only class with just
         # FancyValidator as a superclass):
-        if bases == (validators.FancyValidator,):
+        if bases == (FancyValidator,):
             return cls
         # Make sure we have out own copy of fields,
         # not shared by parent classes (and indirectly not by
@@ -33,7 +33,7 @@ class SchemaMeta(declarative.DeclarativeMeta):
             if key in ['pre_validators', 'chained_validators',
                        'view']:
                 continue
-            validator = validators.adapt_validator(value)
+            validator = adapt_validator(value)
             if validator:
                 cls.fields[key] = value
                 delattr(cls, key)
@@ -45,7 +45,7 @@ class SchemaMeta(declarative.DeclarativeMeta):
             cls.add_field(name, value)
         return cls
 
-class Schema(validators.FancyValidator):
+class Schema(FancyValidator):
 
     """
     A schema validates a dictionary of values, applying different
@@ -87,11 +87,11 @@ class Schema(validators.FancyValidator):
         }
     
     def _to_python(self, value_dict, state):
-        if not value_dict and self.if_empty is not validators.NoDefault:
+        if not value_dict and self.if_empty is not NoDefault:
             return self.if_empty
         
         for validator in self.pre_validators:
-            value_dict = validators.to_python(validator, value_dict, state)
+            value_dict = to_python(validator, value_dict, state)
         
         new = {}
         errors = {}
@@ -106,41 +106,41 @@ class Schema(validators.FancyValidator):
                     unused.remove(name)
                 except ValueError:
                     if not self.allow_extra_fields:
-                        raise validators.Invalid(
+                        raise Invalid(
                             self.message('notExpected', state,
                                          name=repr(name)),
                             value_dict, state)
                     else:
                         new[name] = value
                         continue
-                validator = validators.adapt_validator(self.fields[name], state)
+                validator = adapt_validator(self.fields[name], state)
 
                 try:
                     new[name] = validator.to_python(value, state)
-                except validators.Invalid, e:
+                except Invalid, e:
                     errors[name] = e
 
             for name in unused:
-                validator = validators.adapt_validator(self.fields[name], state)
+                validator = adapt_validator(self.fields[name], state)
                 try:
                     if_missing = validator.if_missing
                 except AttributeError:
-                    if_missing = validators.NoDefault
-                if if_missing is validators.NoDefault:
-                    errors[name] = validators.Invalid(
+                    if_missing = NoDefault
+                if if_missing is NoDefault:
+                    errors[name] = Invalid(
                         self.message('missingValue', state),
                         None, state)
                 else:
                     new[name] = validator.if_missing
 
             if errors:
-                raise validators.Invalid(
+                raise Invalid(
                     format_compound_error(errors),
                     value_dict, state,
                     error_dict=errors)
 
             for validator in self.chained_validators:
-                new = validators.to_python(validator, new, state)
+                new = to_python(validator, new, state)
 
             return new
 

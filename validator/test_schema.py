@@ -2,6 +2,7 @@ from testcase import TestCase
 import validators
 import foreach
 from schema import Schema
+from api import *
 from variabledecode import NestedVariables
 
 def d(**kw): return kw
@@ -11,7 +12,7 @@ class SchemaTest(TestCase):
     def testGood(self, description, schema, input, output):
         if isinstance(input, str):
             input = self.cgi_parse(input)
-        real = validators.to_python(schema, input)
+        real = to_python(schema, input)
         if isinstance(real, dict):
             self.assert_dict_equal(real, output)
         else:
@@ -23,8 +24,8 @@ class SchemaTest(TestCase):
         if isinstance(input, str):
             input = self.cgi_parse(input)
         try:
-            validators.to_python(schema, input)
-        except validators.Invalid, e:
+            to_python(schema, input)
+        except Invalid, e:
             out = makeComparable(e, errors)
             if isinstance(out, dict) and isinstance(errors, dict):
                 self.assert_dict_equal(out, errors or {})

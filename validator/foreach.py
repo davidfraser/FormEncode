@@ -1,4 +1,5 @@
-from validators import CompoundValidator, NoDefault, Invalid
+from api import NoDefault, Invalid
+from compound import CompoundValidator
 
 class ForEach(CompoundValidator):
 
