@@ -1,4 +1,7 @@
-import protocols
+try:
+    import protocols
+except ImportError:
+    import dummy_protocols as protocols
 from interfaces import *
 from declarative import Declarative
 

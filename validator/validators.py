@@ -31,7 +31,6 @@ httplib = None
 urlparse = None
 from interfaces import *
 from api import *
-import protocols
 from declarative import Declarative, DeclarativeMeta
 
 True, False = (1==1), (0==1)

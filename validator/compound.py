@@ -157,7 +157,7 @@ def _adaptListToAll(v, protocol):
     return All(*v)
 
 # @@: maybe this is fishy?
-import protocols
-from interfaces import *
-protocols.declareAdapter(_adaptListToAll, [IValidator],
-                         forTypes=[list, tuple])
+#import protocols
+#from interfaces import *
+#protocols.declareAdapter(_adaptListToAll, [IValidator],
+#                         forTypes=[list, tuple])

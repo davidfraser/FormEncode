@@ -1,7 +1,10 @@
 from interfaces import *
 from api import *
 import declarative
-import protocols
+try:
+    import protocols
+except ImportError:
+    import dummy_protocols as protocols
 
 class SchemaMeta(declarative.DeclarativeMeta):
 

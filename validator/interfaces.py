@@ -2,7 +2,10 @@
 Interfaces for FormEncode
 """
 
-from protocols import Interface, Attribute
+try:
+    from protocols import Interface, Attribute
+except ImportError:
+    from dummy_protocols import Interface, Attribute
 
 class IDeclarative(Interface):
 
