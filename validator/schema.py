@@ -98,8 +98,8 @@ class Schema(FancyValidator):
         unused = self.fields.keys()
         if state is not None:
             previous_key = getattr(state, 'key', None)
-            previous_full_dict = getattr(state, 'fullDict', None)
-            state.fullDict = value_dict
+            previous_full_dict = getattr(state, 'full_dict', None)
+            state.full_dict = value_dict
         try:
             for name, value in value_dict.items():
                 try:
@@ -147,7 +147,7 @@ class Schema(FancyValidator):
         finally:
             if state is not None:
                 state.key = previous_key
-                state.fullDict = previous_full_dict
+                state.full_dict = previous_full_dict
 
 
     def add_chained_validator(self, cls, validator):

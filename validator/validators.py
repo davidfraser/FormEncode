@@ -762,13 +762,13 @@ class Set(FancyValidator):
             return [value]
 
 class Email(FancyValidator):
-    """Validate an email address.  If you pass resolveDomain=True,
+    """Validate an email address.  If you pass resolve_domain=True,
     then it will try to resolve the domain name to make sure it's valid.
     This takes longer, of course.  You must have the pyDNS modules
     installed <http://pydns.sf.net> to look up MX records.
     """
 
-    resolveDomain=False
+    resolve_domain=False
 
     usernameRE = re.compile(r"^[a-z0-9\_\-']+", re.I)
     domainRE = re.compile(r"^[a-z0-9\.\-]+\.[a-z]+$", re.I)
@@ -784,7 +784,7 @@ class Email(FancyValidator):
     def __init__(self, *args, **kw):
         global mxlookup
         FancyValidator.__init__(self, *args, **kw)
-        if self.resolveDomain:
+        if self.resolve_domain:
             if mxlookup is None:
                 try:
                     from DNS.lazy import mxlookup
@@ -814,7 +814,7 @@ class Email(FancyValidator):
                 self.message('badDomain', state,
                              domain=splitted[1]),
                 value, state)
-        if self.resolveDomain:
+        if self.resolve_domain:
             domains = mxlookup(splitted[1])
             if not domains:
                 raise Invalid(
