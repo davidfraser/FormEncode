@@ -1,7 +1,9 @@
 try:
     import protocols
+    dummy = False
 except ImportError:
     import dummy_protocols as protocols
+    dummy = True
 from interfaces import *
 from declarative import Declarative
 
@@ -16,6 +18,11 @@ def adapt_validator(obj, state=None):
     try:
         if isinstance(obj, type) and issubclass(obj, Declarative):
             obj = obj.singleton()
+        if dummy:
+            if not isinstance(obj, Validator):
+                return None
+            else:
+                return obj
         validator = protocols.adapt(
             obj, IValidator)
         if validator and state:
