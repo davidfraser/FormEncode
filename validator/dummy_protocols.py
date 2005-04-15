@@ -15,3 +15,6 @@ class Attribute(object):
     def __init__(self, doc, name=None):
         self.doc = doc
         self.name = name
+
+class AdaptationFailure(Exception):
+    pass
