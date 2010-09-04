@@ -2,10 +2,11 @@
 Core classes for validation.
 """
 
-import declarative
+from . import declarative
 import textwrap
 import re
 import os
+import collections
 try:
     from pkg_resources import resource_filename
 except ImportError:
@@ -54,7 +55,7 @@ def set_stdtranslation(domain="FormEncode", languages=None, \
                             languages=languages, \
                             localedir=localedir, fallback=True)
     global _stdtrans
-    _stdtrans = t.ugettext
+    _stdtrans = t.gettext
 
 set_stdtranslation()
 
@@ -119,12 +120,12 @@ class Invalid(Exception):
         return val    
 
     def __unicode__(self):
-        if isinstance(self.msg, unicode):
+        if isinstance(self.msg, str):
             return self.msg
         elif isinstance(self.msg, str):
             return self.msg.decode('utf8')
         else:
-            return unicode(self.msg)
+            return str(self.msg)
 
     def unpack_errors(self, encode_variables=False, dict_char='.',
                       list_char='-'):
@@ -148,17 +149,17 @@ class Invalid(Exception):
             return result
         elif self.error_dict:
             result = {}
-            for name, item in self.error_dict.items():
-                if isinstance(item, (str, unicode)):
+            for name, item in list(self.error_dict.items()):
+                if isinstance(item, str):
                     result[name] = item
                 else:
                     result[name] = item.unpack_errors()
             if encode_variables:
-                import variabledecode
+                from . import variabledecode
                 result = variabledecode.variable_encode(result, add_repetitions=False,
                                                         dict_char=dict_char,
                                                         list_char=list_char)
-                for key in result.keys():
+                for key in list(result.keys()):
                     if not result[key]:
                         del result[key]
             return result
@@ -191,14 +192,14 @@ class Validator(declarative.Declarative):
                             'subvalidators')
 
     def __classinit__(cls, new_attrs):
-        if new_attrs.has_key('messages'):
+        if 'messages' in new_attrs:
             cls._messages = cls._messages.copy()
             cls._messages.update(cls.messages)
             del cls.messages
         cls._initialize_docstring()
 
     def __init__(self, *args, **kw):
-        if kw.has_key('messages'):
+        if 'messages' in kw:
             self._messages = self._messages.copy()
             self._messages.update(kw['messages'])
             del kw['messages']
@@ -217,8 +218,8 @@ class Validator(declarative.Declarative):
         except AttributeError:
             try:
                 if self.use_builtins_gettext:
-                    import __builtin__
-                    trans = __builtin__._
+                    import builtins
+                    trans = builtins._
                     
                 else:
                     trans = _stdtrans
@@ -226,7 +227,7 @@ class Validator(declarative.Declarative):
             except AttributeError:
                 trans = _stdtrans
  
-        if not callable(trans):
+        if not isinstance(trans, collections.Callable):
             trans = _stdtrans
 
 
@@ -234,11 +235,11 @@ class Validator(declarative.Declarative):
         msg = trans(msg, **self.gettextargs)
         try:
             return msg % kw
-        except KeyError, e:
+        except KeyError as e:
             raise KeyError(
                 "Key not found (%s) for %r=%r %% %r (from: %s)"
                 % (e, msgName, self._messages.get(msgName), kw,
-                   ', '.join(self._messages.keys())))
+                   ', '.join(list(self._messages.keys()))))
 
     def all_messages(self):
         """
@@ -285,7 +286,7 @@ class Validator(declarative.Declarative):
         """
         doc = cls.__doc__ or ''
         doc = [textwrap.dedent(doc).rstrip()]
-        messages = cls._messages.items()
+        messages = list(cls._messages.items())
         messages.sort()
         doc.append('\n\n**Messages**\n\n')
         for name, default in messages:
@@ -392,7 +393,7 @@ class FancyValidator(Validator):
 
     def to_python(self, value, state=None):
         try:
-            if self.strip and isinstance(value, (str, unicode)):
+            if self.strip and isinstance(value, str):
                 value = value.strip()
             elif hasattr(value, 'mixed'):
                 # Support Paste's MultiDict
@@ -423,7 +424,7 @@ class FancyValidator(Validator):
 
     def from_python(self, value, state=None):
         try:
-            if self.strip and isinstance(value, (str, unicode)):
+            if self.strip and isinstance(value, str):
                 value = value.strip()
             if not self.accept_python:
                 if self.is_empty(value):
@@ -464,7 +465,7 @@ class FancyValidator(Validator):
         return None
 
     def assert_string(self, value, state):
-        if not isinstance(value, (str, unicode)):
+        if not isinstance(value, str):
             raise Invalid(self.message('badType', state,
                                        type=type(value), value=value),
                           value, state)

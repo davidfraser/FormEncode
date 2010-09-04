@@ -3,7 +3,7 @@ Parser for HTML forms, that fills in defaults and errors.  See
 ``render``.
 """
 
-import HTMLParser
+import html.parser
 import re
 from formencode.rewritingparser import RewritingParser, html_quote
 
@@ -197,7 +197,7 @@ class FillingParser(RewritingParser):
         self.in_select = None
         self.skip_next = False        
         self.errors = errors or {}
-        if isinstance(self.errors, (str, unicode)):
+        if isinstance(self.errors, str):
             self.errors = {None: self.errors}
         self.in_error = None
         self.skip_error = False
@@ -222,14 +222,14 @@ class FillingParser(RewritingParser):
         Compare the two objects as strings (coercing to strings if necessary).
         Also uses encoding to compare the strings.
         """
-        if not isinstance(str1, basestring):
+        if not isinstance(str1, str):
             if hasattr(str1, '__unicode__'):
-                str1 = unicode(str1)
+                str1 = str(str1)
             else:
                 str1 = str(str1)
         if type(str1) == type(str2):
             return str1 == str2
-        if isinstance(str1, unicode):
+        if isinstance(str1, str):
             str1 = str1.encode(self.encoding or self.default_encoding)
         else:
             str2 = str2.encode(self.encoding or self.default_encoding)
@@ -239,11 +239,11 @@ class FillingParser(RewritingParser):
         self.handle_misc(None)
         RewritingParser.close(self)
         unused_errors = self.errors.copy()
-        for key in self.used_errors.keys():
-            if unused_errors.has_key(key):
+        for key in list(self.used_errors.keys()):
+            if key in unused_errors:
                 del unused_errors[key]
         if self.auto_error_formatter:
-            for key, value in unused_errors.items():
+            for key, value in list(unused_errors.items()):
                 error_message = self.auto_error_formatter(value)
                 error_message = '<!-- for: %s -->\n%s' % (key, error_message)
                 self.insert_at_marker(
@@ -251,15 +251,15 @@ class FillingParser(RewritingParser):
             unused_errors = {}
         if self.use_all_keys:
             unused = self.defaults.copy()
-            for key in self.used_keys.keys():
-                if unused.has_key(key):
+            for key in list(self.used_keys.keys()):
+                if key in unused:
                     del unused[key]
             assert not unused, (
                 "These keys from defaults were not used in the form: %s"
-                % unused.keys())
+                % list(unused.keys()))
             if unused_errors:
                 error_text = []
-                for key in unused_errors.keys():
+                for key in list(unused_errors.keys()):
                     error_text.append("%s: %s" % (key, self.errors[key]))
                 assert False, (
                     "These errors were not used in the form: %s" % 
@@ -354,8 +354,8 @@ class FillingParser(RewritingParser):
         if self.prefix_error:
             self.write_marker(name)
         value = self.defaults.get(name)
-        if self.add_attributes.has_key(name):
-            for attr_name, attr_value in self.add_attributes[name].items():
+        if name in self.add_attributes:
+            for attr_name, attr_value in list(self.add_attributes[name].items()):
                 if attr_name.startswith('+'):
                     attr_name = attr_name[1:]
                     self.set_attr(attrs, attr_name,
@@ -501,7 +501,7 @@ class FillingParser(RewritingParser):
         """
         if obj is None:
             return value == ""
-        if isinstance(obj, (str, unicode)):
+        if isinstance(obj, str):
             return obj == value
         if hasattr(obj, '__contains__'):
             if value in obj:

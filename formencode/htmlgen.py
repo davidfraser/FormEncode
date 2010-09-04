@@ -56,7 +56,7 @@ Examples::
 
 """
 
-from __future__ import generators
+
 
 from cgi import escape
 try:
@@ -87,21 +87,21 @@ class _HTML:
     def quote(self, arg):
         if arg is None:
             return ''
-        return escape(unicode(arg).encode(default_encoding), 1)
+        return escape(str(arg).encode(default_encoding), 1)
 
     def str(self, arg, encoding=None):
         if isinstance(arg, str):
             return arg
         elif arg is None:
             return ''
-        elif isinstance(arg, unicode):
+        elif isinstance(arg, str):
             return arg.encode(default_encoding)
         elif isinstance(arg, (list, tuple)):
             return ''.join(map(self.str, arg))
         elif isinstance(arg, Element):
             return str(arg)
         else:
-            return unicode(arg).encode(default_encoding)
+            return str(arg).encode(default_encoding)
 
 html = _HTML()
 
@@ -109,7 +109,7 @@ class Element(ET._ElementInterface):
 
     def __call__(self, *args, **kw):
         el = self.__class__(self.tag, self.attrib)
-        if kw.has_key('c'):
+        if 'c' in kw:
             if args:
                 raise ValueError(
                     "You may either provide positional arguments or a "
@@ -118,11 +118,11 @@ class Element(ET._ElementInterface):
             del kw['c']
             if not isinstance(args, (list, tuple)):
                 args = (args,)
-        for name, value in kw.items():
+        for name, value in list(kw.items()):
             if value is None:
                 del kw[name]
                 continue
-            kw[name] = unicode(value)
+            kw[name] = str(value)
             if name.endswith('_'):
                 kw[name[:-1]] = value
                 del kw[name]
@@ -142,14 +142,14 @@ class Element(ET._ElementInterface):
             if not ET.iselement(arg):
                 if last is None:
                     if el.text is None:
-                        el.text = unicode(arg)
+                        el.text = str(arg)
                     else:
-                        el.text += unicode(arg)
+                        el.text += str(arg)
                 else:
                     if last.tail is None:
-                        last.tail = unicode(arg)
+                        last.tail = str(arg)
                     else:
-                        last.tail += unicode(arg)
+                        last.tail += str(arg)
             else:
                 last = arg
                 el.append(last)

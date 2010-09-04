@@ -1,30 +1,30 @@
-import HTMLParser
+import html.parser
 import re
 import cgi
-from htmlentitydefs import name2codepoint
+from html.entities import name2codepoint
 
 def html_quote(v):
     if v is None:
         return ''
     elif hasattr(v, '__html__'):
         return v.__html__()
-    elif isinstance(v, basestring):
+    elif isinstance(v, str):
         return cgi.escape(v, 1)
     else:
         if hasattr(v, '__unicode__'):
-            v = unicode(v)
+            v = str(v)
         else:
             v = str(v)
         return cgi.escape(v, 1)
 
-class RewritingParser(HTMLParser.HTMLParser):
+class RewritingParser(html.parser.HTMLParser):
 
     listener = None
     skip_next = False
 
     def __init__(self):
         self._content = []
-        HTMLParser.HTMLParser.__init__(self)
+        html.parser.HTMLParser.__init__(self)
 
     def feed(self, data):
         self.data_is_str = isinstance(data, str)
@@ -33,7 +33,7 @@ class RewritingParser(HTMLParser.HTMLParser):
         self.source_pos = 1, 0
         if self.listener:
             self.listener.reset()
-        HTMLParser.HTMLParser.feed(self, data)
+        html.parser.HTMLParser.feed(self, data)
 
     _entityref_re = re.compile('&([a-zA-Z][-.a-zA-Z\d]*);')
     _charref_re = re.compile('&#(\d+|[xX][a-fA-F\d]+);')
@@ -49,7 +49,7 @@ class RewritingParser(HTMLParser.HTMLParser):
             # If we don't recognize it, pass it through as though it
             # wasn't an entity ref at all
             return match.group(0)
-        return unichr(name2codepoint[name])
+        return chr(name2codepoint[name])
 
     def _sub_charref(self, match):
         num = match.group(1)
@@ -57,7 +57,7 @@ class RewritingParser(HTMLParser.HTMLParser):
             num = int(num[1:], 16)
         else:
             num = int(num)
-        return unichr(num)
+        return chr(num)
 
     def handle_misc(self, whatever):
         self.write_pos()
@@ -142,7 +142,7 @@ class RewritingParser(HTMLParser.HTMLParser):
         try:
             return ''.join([
                 t for t in self._content if not isinstance(t, tuple)])
-        except UnicodeDecodeError, e:
+        except UnicodeDecodeError as e:
             if self.data_is_str:
                 e.reason += (
                     " the form was passed in as an encoded string, but "

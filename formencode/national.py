@@ -1,7 +1,8 @@
 import re
-from api import FancyValidator
-from compound import Any
-from validators import Regex, Invalid, _
+from .api import FancyValidator
+from .compound import Any
+from .validators import Regex, Invalid, _
+import collections
 
 try:
     import pycountry
@@ -47,7 +48,7 @@ if has_turbogears:
         else:
             d = dict(country_additions)
             d.update(dict(c2))
-        ret = d.items() + fuzzy_countrynames
+        ret = list(d.items()) + fuzzy_countrynames
         return ret
 
     def get_country(code):
@@ -59,7 +60,7 @@ if has_turbogears:
         if len(c1) > len(c2):
             d = dict(c1)
             d.update(dict(c2))
-            return d.items()
+            return list(d.items())
         else:
             return c2
 
@@ -426,7 +427,7 @@ class PostalCodeInCountryFormat(FancyValidator):
             try:
                 zip_validator = self._vd[fields_dict[self.country_field]]()
                 fields_dict[self.zip_field] = zip_validator.to_python(fields_dict[self.zip_field])
-            except Invalid, e:
+            except Invalid as e:
                 message = self.message('badFormat', state)
                 raise Invalid(message, fields_dict, state,
                               error_dict = {self.zip_field: e.message,
@@ -660,7 +661,7 @@ class InternationalPhoneNumber(FancyValidator):
             value = value.replace(f, t)
         value = self._perform_rex_transformation(value, self._preTransformations)
         if self.default_cc:
-            if callable(self.default_cc):
+            if isinstance(self.default_cc, collections.Callable):
                 cc = self.default_cc()
             else:
                 cc = self.default_cc

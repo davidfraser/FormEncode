@@ -20,7 +20,7 @@ and list_char keyword args. For example, to have the GET/POST variables,
 ``a_1=something`` as a list, you would use a list_char='_'.
 """
 
-import api
+from . import api
 
 __all__ = ['variable_decode', 'variable_encode', 'NestedVariables']
 
@@ -31,7 +31,7 @@ def variable_decode(d, dict_char='.', list_char='-'):
     result = {}
     dicts_to_sort = {}
     known_lengths = {}
-    for key, value in d.items():
+    for key, value in list(d.items()):
         keys = key.split(dict_char)
         new_keys = []
         was_repetition_count = False
@@ -61,7 +61,7 @@ def variable_decode(d, dict_char='.', list_char='-'):
             except KeyError:
                 place[new_keys[i]] = {}
                 place = place[new_keys[i]]
-        if place.has_key(new_keys[-1]):
+        if new_keys[-1] in place:
             if isinstance(place[new_keys[-1]], dict):
                 place[new_keys[-1]][None] = value
             elif isinstance(place[new_keys[-1]], list):
@@ -78,7 +78,7 @@ def variable_decode(d, dict_char='.', list_char='-'):
         else:
             place[new_keys[-1]] = value
 
-    to_sort_keys = dicts_to_sort.keys()
+    to_sort_keys = list(dicts_to_sort.keys())
     to_sort_keys.sort(lambda a, b: -cmp(len(a), len(b)))
     for key in to_sort_keys:
         to_sort = result
@@ -88,16 +88,16 @@ def variable_decode(d, dict_char='.', list_char='-'):
             source = to_sort
             last_key = sub_key
             to_sort = to_sort[sub_key]
-        if to_sort.has_key(None):
+        if None in to_sort:
             noneVals = [(0, x) for x in to_sort[None]]
             del to_sort[None]
-            noneVals.extend(to_sort.items())
+            noneVals.extend(list(to_sort.items()))
             to_sort = noneVals
         else:
-            to_sort = to_sort.items()
+            to_sort = list(to_sort.items())
         to_sort.sort()
         to_sort = [v for k, v in to_sort]
-        if known_lengths.has_key(key):
+        if key in known_lengths:
             if len(to_sort) < known_lengths[key]:
                 to_sort.extend(['']*(known_lengths[key] - len(to_sort)))
         source[last_key] = to_sort
@@ -112,7 +112,7 @@ def variable_encode(d, prepend='', result=None, add_repetitions=True,
     if result is None:
         result = {}
     if isinstance(d, dict):
-        for key, value in d.items():
+        for key, value in list(d.items()):
             if key is None:
                 name = prepend
             elif not prepend:

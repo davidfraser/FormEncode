@@ -4,15 +4,10 @@ Validator for repeating items.
 import warnings
 filters = warnings.filters[:]
 warnings.simplefilter('ignore', DeprecationWarning)
-from sets import Set
 warnings.filters = filters
-try:
-    set
-except NameError:
-    set = Set
 
-from api import NoDefault, Invalid
-from compound import CompoundValidator, to_python, from_python
+from .api import NoDefault, Invalid
+from .compound import CompoundValidator, to_python, from_python
 
 __all__ = ['ForEach']
 
@@ -78,7 +73,7 @@ class ForEach(CompoundValidator):
                 for validator in self.validators:
                     try:
                         sub_value = validate(validator, sub_value, state)
-                    except Invalid, e:
+                    except Invalid as e:
                         errors.append(e)
                         all_good = False
                         good_pass = False
@@ -92,7 +87,7 @@ class ForEach(CompoundValidator):
                 return new_list
             else:
                 raise Invalid(
-                    'Errors:\n%s' % '\n'.join([unicode(e) for e in errors if e]),
+                    'Errors:\n%s' % '\n'.join([str(e) for e in errors if e]),
                     value,
                     state,
                     error_list=errors)
@@ -133,7 +128,7 @@ class ForEach(CompoundValidator):
     del _IfMissing
 
     def _convert_to_list(self, value):
-        if isinstance(value, (str, unicode)):
+        if isinstance(value, str):
             return [value]
         elif value is None:
             return []

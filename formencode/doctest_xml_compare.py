@@ -2,7 +2,7 @@ try:
     import doctest
     doctest.OutputChecker
 except AttributeError:
-    import util.doctest24 as doctest
+    from . import util.doctest24 as doctest
 try:
     import xml.etree.ElementTree as ET
 except ImportError:
@@ -13,7 +13,7 @@ RealOutputChecker = doctest.OutputChecker
 
 def debug(*msg):
     import sys
-    print >> sys.stderr, ' '.join(map(str, msg))
+    print(' '.join(map(str, msg)), file=sys.stderr)
 
 class HTMLOutputChecker(RealOutputChecker):
 
@@ -23,7 +23,7 @@ class HTMLOutputChecker(RealOutputChecker):
             return normal
         try:
             want_xml = make_xml(want)
-        except XMLParseError, e:
+        except XMLParseError as e:
             pass
         else:
             try:
@@ -42,7 +42,7 @@ class HTMLOutputChecker(RealOutputChecker):
         try:
             want_xml = make_xml(example.want)
             want_norm = make_string(want_xml)
-        except XMLParseError, e:
+        except XMLParseError as e:
             if example.want.startswith('<'):
                 want_norm = '(bad XML: %s)' % e
                 #  '<xml>%s</xml>' % example.want
@@ -51,7 +51,7 @@ class HTMLOutputChecker(RealOutputChecker):
         try:
             got_xml = make_xml(got)
             got_norm = make_string(got_xml)
-        except XMLParseError, e:
+        except XMLParseError as e:
             if example.want.startswith('<'):
                 got_norm = '(bad XML: %s)' % e
             else:
@@ -69,14 +69,14 @@ def xml_compare(x1, x2, reporter=None):
         if reporter:
             reporter('Tags do not match: %s and %s' % (x1.tag, x2.tag))
         return False
-    for name, value in x1.attrib.items():
+    for name, value in list(x1.attrib.items()):
         if x2.attrib.get(name) != value:
             if reporter:
                 reporter('Attributes do not match: %s=%r, %s=%r'
                          % (name, value, name, x2.attrib.get(name)))
             return False
-    for name in x2.attrib.keys():
-        if not x1.attrib.has_key(name):
+    for name in list(x2.attrib.keys()):
+        if name not in x1.attrib:
             if reporter:
                 reporter('x2 has an attribute x1 is missing: %s'
                          % name)
@@ -117,7 +117,7 @@ def make_xml(s):
     return ET.XML('<xml>%s</xml>' % s)
 
 def make_string(xml):
-    if isinstance(xml, (str, unicode)):
+    if isinstance(xml, str):
         xml = make_xml(xml)
     s = ET.tostring(xml)
     if s == '<xml />':

@@ -7,7 +7,7 @@ You can either pass ``SchemaBuilder`` to ``htmlfill.render`` (the
 ``Schema`` object.
 """
 
-import validators, schema, compound, htmlfill
+from . import validators, schema, compound, htmlfill
 
 __all__ = ['parse_schema', 'SchemaBuilder']
 
@@ -31,7 +31,7 @@ def get_messages(cls, message):
     if not message:
         return {}
     else:
-        return dict([(k, message) for k in cls._messages.keys()])
+        return dict([(k, message) for k in list(cls._messages.keys())])
 
 def to_bool(value):
     value = value.strip().lower()

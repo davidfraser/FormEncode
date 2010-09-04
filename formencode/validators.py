@@ -7,26 +7,22 @@ Validator/Converters for use with FormEncode.
 import locale
 import warnings
 import re
+import collections
 DateTime = None
 httplib = None
 urlparse = None
 import socket
-from interfaces import *
-from api import *
+from .interfaces import *
+from .api import *
 sha1 = random = None
 
 filters = warnings.filters[:]
 warnings.simplefilter('ignore', DeprecationWarning)
-import sets
 warnings.filters = filters
-try:
-    set
-except NameError:
-    set = sets.Set
 
 import cgi
 
-import fieldstorage
+from . import fieldstorage
 
 try:
     import DNS
@@ -34,8 +30,6 @@ try:
     have_dns=True
 except ImportError:
     have_dns=False
-
-True, False = (1==1), (0==1)
 
 # dummy translation function, nothing is translated here.
 # Instead this is actually done in api.message.
@@ -88,7 +82,7 @@ def datetime_makedate(module, year, month, day):
     else:
         try:
             return module.DateTime(year, month, day)
-        except module.RangeError, e:
+        except module.RangeError as e:
             raise ValueError(str(e))
 
 
@@ -246,7 +240,7 @@ class Wrapper(FancyValidator):
     def __init__(self, *args, **kw):
         for n in ['to_python', 'from_python', 'validate_python',
                   'validate_other']:
-            if kw.has_key(n):
+            if n in kw:
                 kw['func_%s' % n] = kw[n]
                 del kw[n]
         FancyValidator.__init__(self, *args, **kw)
@@ -261,7 +255,7 @@ class Wrapper(FancyValidator):
         def result(value, state, func=func):
             try:
                 return func(value)
-            except Exception, e:
+            except Exception as e:
                 raise Invalid(str(e), {}, value, state)
         return result
 
@@ -507,13 +501,13 @@ class Regex(FancyValidator):
 
     def __init__(self, *args, **kw):
         FancyValidator.__init__(self, *args, **kw)
-        if isinstance(self.regex, basestring):
+        if isinstance(self.regex, str):
             ops = 0
-            assert not isinstance(self.regexOps, basestring), (
+            assert not isinstance(self.regexOps, str), (
                 "regexOps should be a list of options from the re module "
                 "(names, or actual values)")
             for op in self.regexOps:
-                if isinstance(op, basestring):
+                if isinstance(op, str):
                     ops |= getattr(re, op)
                 else:
                     ops |= op
@@ -521,14 +515,14 @@ class Regex(FancyValidator):
 
     def validate_python(self, value, state):
         self.assert_string(value, state)
-        if self.strip and isinstance(value, basestring):
+        if self.strip and isinstance(value, str):
             value = value.strip()
         if not self.regex.search(value):
             raise Invalid(self.message('invalid', state),
                           value, state)
 
     def _to_python(self, value, state):
-        if self.strip and isinstance(value, basestring):
+        if self.strip and isinstance(value, str):
             return value.strip()
         return value
 
@@ -674,20 +668,20 @@ class DictConverter(FancyValidator):
                 raise Invalid(self.message('keyNotFound', state),
                               value, state)
             else:
-                items = '; '.join(map(repr, self.dict.keys()))
+                items = '; '.join(map(repr, list(self.dict.keys())))
                 raise Invalid(self.message('chooseKey', state,
                                            items=items),
                               value, state)
 
     def _from_python(self, value, state):
-        for k, v in self.dict.items():
+        for k, v in list(self.dict.items()):
             if value == v:
                 return k
         if self.hideDict:
             raise Invalid(self.message('valueNotFound', state),
                           value, state)
         else:
-            items = '; '.join(map(repr, self.dict.values()))
+            items = '; '.join(map(repr, list(self.dict.values())))
             raise Invalid(self.message('chooseValue', state,
                                        value=repr(value),
                                        items=items),
@@ -810,14 +804,14 @@ class DateValidator(FancyValidator):
 
     def validate_python(self, value, state):
         date_format = self.message('date_format', state)
-        if isinstance(date_format, unicode):
+        if isinstance(date_format, str):
             # strftime uses the locale encoding, not Unicode
             encoding = locale.getlocale(locale.LC_TIME)[1] or 'utf-8'
             date_format = date_format.encode(encoding)
         else:
             encoding = None
         if self.earliest_date:
-            if callable(self.earliest_date):
+            if isinstance(self.earliest_date, collections.Callable):
                 earliest_date = self.earliest_date()
             else:
                 earliest_date = self.earliest_date
@@ -830,7 +824,7 @@ class DateValidator(FancyValidator):
                                  date=date_formatted),
                     value, state)
         if self.latest_date:
-            if callable(self.latest_date):
+            if isinstance(self.latest_date, collections.Callable):
                 latest_date = self.latest_date()
             else:
                 latest_date = self.latest_date
@@ -1069,27 +1063,27 @@ class String(FancyValidator):
     def _to_python(self, value, state):
         if not value:
             value = ''
-        if not isinstance(value, basestring):
+        if not isinstance(value, str):
             try:
                 value = str(value)
             except UnicodeEncodeError:
-                value = unicode(value)
-        if self.encoding is not None and isinstance(value, unicode):
+                value = str(value)
+        if self.encoding is not None and isinstance(value, str):
             value = value.encode(self.encoding)
         return value
 
     def _from_python(self, value, state):
         if not value and value != 0:
             value = ''
-        if not isinstance(value, basestring):
+        if not isinstance(value, str):
             if isinstance(value, (list, tuple)):
                 value = self.list_joiner.join([
                     self._from_python(v, state) for v in value])
             try:
                 value = str(value)
             except UnicodeEncodeError:
-                value = unicode(value)
-        if self.encoding is not None and isinstance(value, unicode):
+                value = str(value)
+        if self.encoding is not None and isinstance(value, str):
             value = value.encode(self.encoding)
         if self.strip:
             value = value.strip()
@@ -1149,18 +1143,18 @@ class UnicodeString(String):
 
     def _to_python(self, value, state):
         if not value:
-            return u''
-        if isinstance(value, unicode):
+            return ''
+        if isinstance(value, str):
             return value
-        if not isinstance(value, unicode):
+        if not isinstance(value, str):
             if hasattr(value, '__unicode__'):
-                value = unicode(value)
+                value = str(value)
                 return value
             else:
                 value = str(value)
         if self.inputEncoding:
             try:
-                value = unicode(value, self.inputEncoding)
+                value = str(value, self.inputEncoding)
             except UnicodeDecodeError:
                 raise Invalid(self.message('badEncoding', state), value, state)
             except TypeError:
@@ -1169,17 +1163,17 @@ class UnicodeString(String):
         return value
 
     def _from_python(self, value, state):
-        if not isinstance(value, unicode):
+        if not isinstance(value, str):
             if hasattr(value, '__unicode__'):
-                value = unicode(value)
+                value = str(value)
             else:
                 value = str(value)
-        if self.outputEncoding and isinstance(value, unicode):
+        if self.outputEncoding and isinstance(value, str):
             value = value.encode(self.outputEncoding)
         return value
 
     def empty_value(self, value):
-        return u''
+        return ''
 
 class Set(FancyValidator):
 
@@ -1216,7 +1210,7 @@ class Set(FancyValidator):
 
     def _to_python(self, value, state):
         if self.use_set:
-            if isinstance(value, (set, sets.Set)):
+            if isinstance(value, set):
                 return value
             elif isinstance(value, (list, tuple)):
                 return set(value)
@@ -1227,7 +1221,7 @@ class Set(FancyValidator):
         else:
             if isinstance(value, list):
                 return value
-            elif sets and isinstance(value, (set, sets.Set)):
+            elif isinstance(value, set):
                 return list(value)
             elif isinstance(value, tuple):
                 return list(value)
@@ -1325,7 +1319,7 @@ class Email(FancyValidator):
                     "pyDNS <http://pydns.sf.net> is not installed on "
                     "your system (or the DNS package cannot be found).  "
                     "I cannot resolve domain names in addresses")
-                raise ImportError, "no module named DNS"
+                raise ImportError("no module named DNS")
 
     def validate_python(self, value, state):
         if not value:
@@ -1357,7 +1351,7 @@ class Email(FancyValidator):
                 if not a:
                     a=DNS.DnsRequest(domain, qtype='a').req().answers
                 dnsdomains=[x['data'] for x in a]
-            except (socket.error, DNS.DNSError), e:
+            except (socket.error, DNS.DNSError) as e:
                 raise Invalid(
 	            self.message('socketError', state, error=e),
 		    value, state)
@@ -1487,17 +1481,17 @@ class URL(FancyValidator):
     def _check_url_exists(self, url, state):
         global httplib, urlparse, socket
         if httplib is None:
-            import httplib
+            import http.client
         if urlparse is None:
-            import urlparse
+            import urllib.parse
         if socket is None:
             import socket
-        scheme, netloc, path, params, query, fragment = urlparse.urlparse(
+        scheme, netloc, path, params, query, fragment = urllib.parse.urlparse(
             url, 'http')
         if scheme == 'http':
-            ConnClass = httplib.HTTPConnection
+            ConnClass = http.client.HTTPConnection
         else:
-            ConnClass = httplib.HTTPSConnection
+            ConnClass = http.client.HTTPSConnection
         try:
             conn = ConnClass(netloc)
             if params:
@@ -1506,11 +1500,11 @@ class URL(FancyValidator):
                 path += '?' + query
             conn.request('HEAD', path)
             res = conn.getresponse()
-        except httplib.HTTPException, e:
+        except http.client.HTTPException as e:
             raise Invalid(
                 self.message('httpError', state, error=e),
                 state, url)
-        except socket.error, e:
+        except socket.error as e:
             raise Invalid(
                 self.message('socketError', state, error=e),
                 state, url)
@@ -1637,7 +1631,7 @@ class XRI(FancyValidator):
                 is not valid.
 
         """
-        if not (isinstance(value, str) or isinstance(value, unicode)):
+        if not (isinstance(value, str) or isinstance(value, str)):
             raise Invalid(self.message("badType", state, type=str(type(value)),
                                        value=value),
                           value, state)
@@ -1812,7 +1806,7 @@ class FileUploadKeeper(FancyValidator):
         if isinstance(upload, cgi.FieldStorage):
             filename = upload.filename
             content = upload.value
-        elif isinstance(upload, basestring) and upload:
+        elif isinstance(upload, str) and upload:
             filename = None
             # @@: Should this encode upload if it is unicode?
             content = upload
@@ -1975,7 +1969,7 @@ class DateConverter(FancyValidator):
         dt_mod = import_datetime(self.datetime_module)
         try:
             return datetime_makedate(dt_mod, year, month, day)
-        except ValueError, v:
+        except ValueError as v:
             raise Invalid(self.message('invalidDate', state,
                                        exception=str(v)),
                           value, state)
@@ -1985,7 +1979,7 @@ class DateConverter(FancyValidator):
             return int(value)
         except ValueError:
             value = value.lower().strip()
-            if self._month_names.has_key(value):
+            if value in self._month_names:
                 return self._month_names[value]
             else:
                 raise Invalid(self.message('unknownMonthName', state,
@@ -2233,7 +2227,7 @@ class TimeConverter(FancyValidator):
             return (hour, minute, second)
 
     def _from_python(self, value, state):
-        if isinstance(value, (str, unicode)):
+        if isinstance(value, str):
             return value
         if hasattr(value, 'hour'):
             hour, minute = value.hour, value.minute
@@ -2332,7 +2326,7 @@ class StringBool(FancyValidator):
     messages = { "string" : _("Value should be %(true)r or %(false)r") }
 
     def _to_python(self, value, state):
-        if isinstance(value, (str, unicode)):
+        if isinstance(value, str):
             value = value.strip().lower()
             if value in self.true_values:
                 return True
@@ -2441,8 +2435,8 @@ class IPAddress(FancyValidator):
         Invalid: Please enter a valid IP address (a.b.c.d)
     """
     messages = {
-            'bad_format' : u'Please enter a valid IP address (a.b.c.d)',
-            'illegal_octets' : u'The octets must be within the range of 0-255 (not %(octet)r)',
+            'bad_format' : 'Please enter a valid IP address (a.b.c.d)',
+            'illegal_octets' : 'The octets must be within the range of 0-255 (not %(octet)r)',
             }
 
     def validate_python(self, value, state):
@@ -2486,8 +2480,8 @@ class CIDR(IPAddress):
         Invalid: Please enter a valid IP address (a.b.c.d) or IP network (a.b.c.d/e)
     """
     messages = dict(IPAddress._messages,
-            bad_format = u'Please enter a valid IP address (a.b.c.d) or IP network (a.b.c.d/e)',
-            illegal_bits = u'The network size (bits) must be within the range of 8-32 (not %(bits)r)',
+            bad_format = 'Please enter a valid IP address (a.b.c.d) or IP network (a.b.c.d/e)',
+            illegal_bits = 'The network size (bits) must be within the range of 8-32 (not %(bits)r)',
             )
 
     def validate_python(self, value, state):
@@ -2536,8 +2530,8 @@ class MACAddress(FancyValidator):
     add_colons = False
 
     messages = {
-        'bad_length': _(u'A MAC address must contain 12 digits and A-F; the value you gave has %(length)s characters'),
-        'bad_character': _(u'MAC addresses may only contain 0-9 and A-F (and optionally :), not %(char)r'),
+        'bad_length': _('A MAC address must contain 12 digits and A-F; the value you gave has %(length)s characters'),
+        'bad_character': _('MAC addresses may only contain 0-9 and A-F (and optionally :), not %(char)r'),
         }
 
     def _to_python(self, value, state):
@@ -2681,7 +2675,7 @@ class FieldsMatch(FormValidator):
 
     def validate_partial(self, field_dict, state):
         for name in self.field_names:
-            if not field_dict.has_key(name):
+            if name not in field_dict:
                 return
         self.validate_python(field_dict, state)
 
@@ -2702,7 +2696,7 @@ class FieldsMatch(FormValidator):
                 else:
                     errors[name] = self.message('invalidNoMatch', state)
         if errors:
-            error_list = errors.items()
+            error_list = list(errors.items())
             error_list.sort()
             error_message = '<br>\n'.join(
                 ['%s: %s' % (name, value) for name, value in error_list])
@@ -2763,7 +2757,7 @@ class CreditCardValidator(FormValidator):
     def validate_python(self, field_dict, state):
         errors = self._validateReturn(field_dict, state)
         if errors:
-            error_list = errors.items()
+            error_list = list(errors.items())
             error_list.sort()
             raise Invalid(
                 '<br>\n'.join(["%s: %s" % (name, value)
@@ -2780,11 +2774,11 @@ class CreditCardValidator(FormValidator):
         number = number.replace(' ', '')
         number = number.replace('-', '')
         try:
-            long(number)
+            int(number)
         except ValueError:
             return {self.cc_number_field: self.message('notANumber', state)}
 
-        assert self._cardInfo.has_key(ccType), (
+        assert ccType in self._cardInfo, (
             "I can't validate that type of credit card")
         foundValid = False
         validLength = False
@@ -2883,7 +2877,7 @@ class CreditCardExpires(FormValidator):
     def validate_python(self, field_dict, state):
         errors = self._validateReturn(field_dict, state)
         if errors:
-            error_list = errors.items()
+            error_list = list(errors.items())
             error_list.sort()
             raise Invalid(
                 '<br>\n'.join(["%s: %s" % (name, value)
@@ -2953,7 +2947,7 @@ class CreditCardSecurityCode(FormValidator):
     def validate_python(self, field_dict, state):
         errors = self._validateReturn(field_dict, state)
         if errors:
-            error_list = errors.items()
+            error_list = list(errors.items())
             error_list.sort()
             raise Invalid(
                 '<br>\n'.join(["%s: %s" % (name, value)
@@ -2987,6 +2981,6 @@ class CreditCardSecurityCode(FormValidator):
 
 
 __all__ = ['Invalid']
-for name, value in globals().items():
+for name, value in list(globals().items()):
     if isinstance(value, type) and issubclass(value, Validator):
         __all__.append(name)

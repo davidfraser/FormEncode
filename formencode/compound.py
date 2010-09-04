@@ -2,7 +2,7 @@
 Validators for applying validations in sequence.
 """
 
-from api import *
+from .api import *
 
 # @@ ianb 2005-05: should CompoundValidator be included?
 __all__ = ['Any', 'All', 'Pipe']
@@ -29,7 +29,7 @@ class CompoundValidator(FancyValidator):
 
     def __classinit__(cls, new_attrs):
         toAdd = []
-        for name, value in new_attrs.items():
+        for name, value in list(new_attrs.items()):
             if name in ('view',):
                 continue
             if is_validator(value) and value is not Identity:
@@ -50,7 +50,7 @@ class CompoundValidator(FancyValidator):
     _reprVars = staticmethod(_reprVars)
 
     def attempt_convert(self, value, state, convertFunc):
-        raise NotImplementedError, "Subclasses must implement attempt_convert"
+        raise NotImplementedError("Subclasses must implement attempt_convert")
 
     def _to_python(self, value, state=None):
         return self.attempt_convert(value, state,
@@ -80,7 +80,7 @@ class Any(CompoundValidator):
         for validator in validators:
             try:
                 return validate(validator, value, state)
-            except Invalid, e:
+            except Invalid as e:
                 lastException = e
         if self.if_invalid is NoDefault:
             raise lastException
@@ -144,7 +144,7 @@ class All(CompoundValidator):
         filtering out None and trying to keep `All` validators from
         being nested (which isn't needed).
         """
-        validators = filter(lambda v: v and v is not Identity, validators)
+        validators = [v for v in validators if v and v is not Identity]
         if not validators:
             return Identity
         if len(validators) == 1:

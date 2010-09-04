@@ -96,7 +96,7 @@ class Context(object):
             "You can only write attribute on context object with the .set() method")
     
     def set(self, **kw):
-        state_id = _restore_ids.next()
+        state_id = next(_restore_ids)
         try:
             stack = self._local.stack
         except AttributeError:
@@ -140,7 +140,7 @@ class Context(object):
         cur = {}
         for vars, state_id in stack:
             cur.update(vars)
-        keys = cur.keys()
+        keys = list(cur.keys())
         keys.sort()
         varlist = []
         for key in keys:
